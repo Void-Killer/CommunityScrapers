@@ -144,8 +144,8 @@ def scrape_scene(scene_json, url=None):
     scene["url"] = url or generate_url()
     scene["date"] = datetime.strptime(scene_json.get("dateReleased"), "%Y-%m-%dT%H:%M:%S%z").strftime("%Y-%m-%d")
     scene["studio"] = {"name": scene_json.get("collections")[0].get("name")}
-    scene["performers"] = [{"name": x.get("name")} for x in scene_json.get("actors")]
-    scene["tags"] = [{"name": x.get("name")} for x in scene_json.get("tags")]
+    scene["performers"] = [{"name": actor.get("name")} for actor in scene_json.get("actors")]
+    scene["tags"] = [{"name": tag.get("name")} for tag in scene_json.get("tags")]
     scene["details"] = scene_json.get("description")
     scene["image"] = scene_json.get("images").get("poster").get("0").get("xx").get("url")
 
@@ -232,9 +232,9 @@ def scrape_actor(actor_json, url=None):
     actor["country"] = country_replace()
     actor["height"] = str(actor_json.get("height") + 100)
     actor["measurements"] = actor_json.get("measurements")
-    actor["fake_tits"] = "Yes" if [x for x in actor_json.get("tags") if x.get("name") == "Enhanced"] else "No"
+    actor["fake_tits"] = "Yes" if [tag for tag in actor_json.get("tags") if tag.get("name") == "Enhanced"] else "No"
     actor["url"] = url or generate_url()
-    actor["tags"] = [{"name": x.get("name")} for x in actor_json.get("tags")]
+    actor["tags"] = [{"name": tag.get("name")} for tag in actor_json.get("tags")]
 
     return actor
 
