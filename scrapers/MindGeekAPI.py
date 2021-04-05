@@ -71,7 +71,7 @@ def get_token(site):
 
 
 def text_to_url(text):
-    return re.sub(r"[!:?\"']", "", text).replace(" ", "-").lower()
+    return re.sub(r"[!:?\"']", "", text).strip().replace(" ", "-").lower()
 
 
 def scrape_scene_by_url(url):
@@ -127,8 +127,6 @@ def get_scene_by_title(title):
             return result
 
     debug("Scene not found")
-    debug(text_to_url(text=result.get("title")))
-    debug(scene_name)
     sys.exit(1)
 
 
@@ -182,12 +180,13 @@ def get_actor_by_url(url):
 def get_actor_by_name(name):
     actor_name = text_to_url(text=name)
 
+    actors = []
     for site in SITE_URLS:
         headers = {"Instance": get_token(site=urlparse(SITE_URLS[site]["actor"])), "User-Agent": USER_AGENT}
 
         try:
-            res = requests.get(f"{ACTOR_API_URL}?limit=1&search={actor_name}", headers=headers, timeout=(3, 5))
-            result = res.json().get("result")[0]
+            res = requests.get(f"{ACTOR_API_URL}?limit=8&search={actor_name}", headers=headers, timeout=(3, 5))
+            result = res.json().get("result")
         except requests.exceptions.RequestException:
             debug(f"Request status: {res.status_code}")
             debug(f"Request status: {res.reason}")
@@ -195,48 +194,68 @@ def get_actor_by_name(name):
             debug(f"Request status: {res.headers}")
             sys.exit(1)
 
-        if text_to_url(text=result.get("name")) == actor_name:
-            result["site"] = site
-            return result
+        for match in result:
+            if actor_name in text_to_url(text=match.get("name")):
+                if not [actor for actor in actors if match.get("id") == actor.get("id")]:
+                    match["site"] = site
+                    actors.append(match)
 
-    debug("Performer not found")
-    debug(text_to_url(text=result.get("name")))
-    debug(actor_name)
-    sys.exit(1)
+    if actors:
+        return actors
+    else:
+        debug("Performer not found")
+        debug(actor_name)
+        sys.exit(1)
 
 
 def scrape_actor(actor_json, url=None):
-    def generate_url():
-        site = SITE_URLS[actor_json.get("site")]["actor"]
-        actor_id = actor_json.get("id")
-        actor_name = text_to_url(text=actor_json.get("name"))
+    def generate_url(actor):
+        site = SITE_URLS[actor.get("site")]["actor"]
+        actor_id = actor.get("id")
+        actor_name = text_to_url(text=actor.get("name"))
         return f"{site}/{actor_id}/{actor_name}"
 
-    def country_replace():
-        country = actor_json.get("birthPlace").split(", ")[-1]
+    def country_replace(actor):
+        country = actor.get("birthPlace").split(", ")[-1]
         return "USA" if country.strip() in USA_BIRTHPLACES else country
 
-    def generate_aliases():
-        aliases = actor_json.get("aliases")
+    def generate_aliases(actor):
+        aliases = actor.get("aliases")
         try:
-            aliases.remove(actor_json.get("name"))
+            aliases.remove(actor.get("name"))
         except ValueError:
             pass
         return ", ".join(aliases)
 
-    actor = {}
-    actor["name"] = actor_json.get("name")
-    actor["aliases"] = generate_aliases()
-    actor["gender"] = actor_json.get("gender")
-    actor["birthdate"] = datetime.strptime(actor_json.get("birthday"), "%Y-%m-%dT%H:%M:%S%z").strftime("%Y-%m-%d")
-    actor["country"] = country_replace()
-    actor["height"] = str(actor_json.get("height") + 100)
-    actor["measurements"] = actor_json.get("measurements")
-    actor["fake_tits"] = "Yes" if [tag for tag in actor_json.get("tags") if tag.get("name") == "Enhanced"] else "No"
-    actor["url"] = url or generate_url()
-    actor["tags"] = [{"name": tag.get("name")} for tag in actor_json.get("tags")]
-
-    return actor
+    if type(actor_json) is list:
+        actors = []
+        for model in actor_json:
+            actor = {}
+            actor["name"] = model.get("name")
+            actor["aliases"] = generate_aliases(actor=model)
+            actor["gender"] = model.get("gender")
+            actor["birthdate"] = datetime.strptime(model.get("birthday"), "%Y-%m-%dT%H:%M:%S%z").strftime("%Y-%m-%d")
+            actor["country"] = country_replace(actor=model)
+            actor["height"] = str(model.get("height") + 100)
+            actor["measurements"] = model.get("measurements")
+            actor["fake_tits"] = "Yes" if [tag for tag in model.get("tags") if tag.get("name") == "Enhanced"] else "No"
+            actor["url"] = url or generate_url(actor=model)
+            actor["tags"] = [{"name": tag.get("name")} for tag in model.get("tags")]
+            actors.append(actor)
+        return actors
+    else:
+        actor = {}
+        actor["name"] = actor_json.get("name")
+        actor["aliases"] = generate_aliases(actor=actor_json)
+        actor["gender"] = actor_json.get("gender")
+        actor["birthdate"] = datetime.strptime(actor_json.get("birthday"), "%Y-%m-%dT%H:%M:%S%z").strftime("%Y-%m-%d")
+        actor["country"] = country_replace(actor=actor_json)
+        actor["height"] = str(actor_json.get("height") + 100)
+        actor["measurements"] = actor_json.get("measurements")
+        actor["fake_tits"] = "Yes" if [tag for tag in actor_json.get("tags") if tag.get("name") == "Enhanced"] else "No"
+        actor["url"] = url or generate_url(actor=actor_json)
+        actor["tags"] = [{"name": tag.get("name")} for tag in actor_json.get("tags")]
+        return actor
 
 
 def main():
@@ -249,7 +268,7 @@ def main():
     elif args.actor_url:
         scraped_json = scrape_actor_by_url(url=fragment["url"])
     elif args.actor_frag:
-        scraped_json = [scrape_actor_by_name(name=fragment["name"])]
+        scraped_json = scrape_actor_by_name(name=fragment["name"])
     else:
         sys.exit(1)
 
