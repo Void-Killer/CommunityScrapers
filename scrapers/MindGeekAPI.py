@@ -241,6 +241,7 @@ def scrape_actor(actor_json, url=None):
             actor["fake_tits"] = "Yes" if [tag for tag in model.get("tags") if tag.get("name") == "Enhanced"] else "No"
             actor["url"] = url or generate_url(actor=model)
             actor["tags"] = [{"name": tag.get("name")} for tag in model.get("tags")]
+            actor["image"] = model.get("images").get("card_main_rect").get("0").get("xl").get("url")
             actors.append(actor)
         return actors
     else:
@@ -255,6 +256,7 @@ def scrape_actor(actor_json, url=None):
         actor["fake_tits"] = "Yes" if [tag for tag in actor_json.get("tags") if tag.get("name") == "Enhanced"] else "No"
         actor["url"] = url or generate_url(actor=actor_json)
         actor["tags"] = [{"name": tag.get("name")} for tag in actor_json.get("tags")]
+        actor["image"] = actor_json.get("images").get("card_main_rect").get("0").get("xl").get("url")
         return actor
 
 
