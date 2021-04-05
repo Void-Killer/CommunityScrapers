@@ -1,10 +1,39 @@
-# Have the url in the URL field.
 name: "MindGeekAPI"
+
 sceneByFragment:
     action: script
     script:
-      - python
+      - C:\python\python.exe
       - MindGeekAPI.py
-#      - logJSON # Save the JSON from the API to a file
-#      - female_only # Only getting female performers
-# Last Updated February 18, 2021
+      - --scene_frag
+
+sceneByURL:
+  - url:
+      - brazzers
+      - realitykings
+      - mofos
+      - babes
+      - digitalplayground
+    action: script
+    script:
+      - C:\python\python.exe
+      - MindGeekAPI.py
+      - --scene_url
+
+
+performerByName:
+    action: script
+    script:
+      - C:\python\python.exe
+      - MindGeekAPI.py
+      - --actor_frag
+
+
+performerByURL:
+  - url:
+      - brazzers
+    action: script
+    script:
+      - C:\python\python.exe
+      - MindGeekAPI.py
+      - --actor_url

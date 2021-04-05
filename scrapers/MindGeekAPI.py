@@ -1,325 +1,260 @@
-import difflib
 import json
-import os
-import pathlib
 import re
-import requests
 import sys
-from configparser import ConfigParser, NoSectionError
+from argparse import ArgumentParser
 from datetime import datetime
 from urllib.parse import urlparse
 
+import requests
 
-USERFOLDER_PATH = str(pathlib.Path(__file__).parent.parent.absolute())
-DIR_JSON = os.path.join(USERFOLDER_PATH, "scraperJSON", "MindGeekAPI")
-# Not necessary but why not ?
-USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:79.0) Gecko/20100101 Firefox/79.0'
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:87.0) Gecko/20100101 Firefox/87.0"
+SCENE_API_URL = "https://site-api.project1service.com/v2/releases"
+ACTOR_API_URL = "https://site-api.project1service.com/v1/actors"
+TOKENS_PATH = "__tokens.json"
+SITE_URLS = {
+    "Brazzers": {"scene": "https://www.brazzers.com/video", "actor": "https://www.brazzers.com/pornstar"},
+    "Reality Kings": {"scene": "https://www.realitykings.com/scene", "actor": "https://www.realitykings.com/model"},
+    "Mofos": {"scene": "https://www.mofos.com/scene", "actor": "https://www.mofos.com/model"},
+    "Babes": {"scene": "https://www.babes.com/scene", "actor": "https://www.babes.com/model"},
+    "Digital Playground": {
+        "scene": "https://www.digitalplayground.com/scene",
+        "actor": "https://www.digitalplayground.com/modelprofile",
+    },
+}
+USA_BIRTHPLACES = (
+    "AK, AL, AR, AZ, CA, CO, CT, DC, DE, FL, GA, HI, IA, ID, IL, IN, KS, KY, LA, MA, MD, ME, MI, MN, MO, MS, MT, NC, "
+    "ND, NE, NH, NJ, NM, NV, NY, OH, OK, OR, PA, RI, SC, SD, TN, TX, UT, VA, VT, WA, WI, WV, WY, Alabama, Alaska, "
+    "Arizona, Arkansas, California, Colorado, Connecticut, Delaware, Florida, Georgia, Hawaii, Idaho, Illinois, "
+    "Indiana, Iowa, Kansas, Kentucky, Louisiana, Maine, Maryland, Massachusetts, Michigan, Minnesota, Mississippi, "
+    "Missouri, Montana, Nebraska, Nevada, New Hampshire, New Jersey, New Mexico, New York, North Carolina, "
+    "North Dakota, Ohio, Oklahoma, Oregon, Pennsylvania, Rhode Island, South Carolina, South Dakota, Tennessee, "
+    "Texas, Utah, Vermont, Virginia, Washington, West Virginia, Wisconsin, Wyoming"
+)
 
-# Set Variable
-SET_RATIO = 0.75
-SET_FILE_URL = "MindGeekAPI.ini"
+
+def argument_handler():
+    parser = ArgumentParser()
+    command_group = parser.add_mutually_exclusive_group()
+    command_group.add_argument("--scene_url", action="store_true")
+    command_group.add_argument("--scene_frag", action="store_true")
+    command_group.add_argument("--actor_url", action="store_true")
+    command_group.add_argument("--actor_frag", action="store_true")
+    return parser.parse_args()
 
 
-def scraping_url(url):
-    my_domain = urlparse(url).netloc
-    id, instance_token = get_info(url)
-    headers = {
-        'Instance': instance_token,
-        'User-Agent': USER_AGENT,
-        'Origin':	'https://' + my_domain,
-        'Referer':	url
-    }
-    return id, headers
+def debug(*mgs):
+    print(*mgs, file=sys.stderr)
 
 
-def debug(q):
-    print(q, file=sys.stderr)
+def get_token(site):
+    def generate_token():
+        res = requests.get(f"{site.scheme}://{site.netloc}", timeout=(3, 5))
+        token = res.cookies.get_dict().get("instance_token")
+
+        tokens[site.netloc] = {"token": token, "date": datetime.today().strftime("%Y-%m-%d")}
+        with open(TOKENS_PATH, "w", encoding="utf-8") as f:
+            json.dump(tokens, f, ensure_ascii=False, indent=4)
+
+    tokens = {}
+    try:
+        tokens = json.load(open(TOKENS_PATH))
+        token = tokens[site.netloc]
+    except (FileNotFoundError, json.decoder.JSONDecodeError, KeyError):
+        generate_token()
+        token = tokens[site.netloc]
+
+    if token["date"] != datetime.today().strftime("%Y-%m-%d"):
+        generate_token()
+        token = tokens[site.netloc]
+
+    return token["token"]
 
 
-def get_info(url):
-    today_string = datetime.today().strftime('%Y-%m-%d')
-    today = datetime.strptime(today_string, '%Y-%m-%d')
-    token, found_scene_id = check_config(url, today)
-    if not token:
-        debug("No instance token found, sending request...")
+def text_to_url(text):
+    return re.sub(r"[!:?\"']", "", text).replace(" ", "-").lower()
+
+
+def scrape_scene_by_url(url):
+    scene_json = get_scene_by_url(url=url)
+    return scrape_scene(scene_json=scene_json, url=url)
+
+
+def scrape_scene_by_title(title):
+    scene_json = get_scene_by_title(title=title)
+    return scrape_scene(scene_json=scene_json)
+
+
+def get_scene_by_url(url):
+    scene_id = re.search(r"/(\d+)/*", url).group(1)
+    headers = {"Instance": get_token(site=urlparse(url)), "User-Agent": USER_AGENT}
+
+    try:
+        res = requests.get(f"{SCENE_API_URL}/{scene_id}", headers=headers, timeout=(3, 5))
+        assert res.status_code == 200
+    except (requests.exceptions.RequestException, AssertionError):
+        debug(f"Request status: {res.status_code}")
+        debug(f"Request reason: {res.reason}")
+        debug(f"Request url: {res.url}")
+        debug(f"Request headers: {res.request.headers}")
+        sys.exit(1)
+
+    return res.json().get("result")
+
+
+def get_scene_by_title(title):
+    try:
+        scene_name = text_to_url(text=re.search(r"\((.+?)\)\s\(\d*-", title).group(1))
+    except AttributeError:
+        scene_name = text_to_url(text=title)
+
+    for site in SITE_URLS:
+        headers = {"Instance": get_token(site=urlparse(SITE_URLS[site]["scene"])), "User-Agent": USER_AGENT}
+
         try:
-            r = requests.get(url, timeout=(3, 5))
+            res = requests.get(
+                f"{SCENE_API_URL}?type=scene&limit=1&search={scene_name}", headers=headers, timeout=(3, 5)
+            )
+            result = res.json().get("result")[0]
         except requests.exceptions.RequestException:
-            debug("Error with Request.")
+            debug(f"Request status: {res.status_code}")
+            debug(f"Request status: {res.reason}")
+            debug(f"Request status: {res.url}")
+            debug(f"Request status: {res.headers}")
             sys.exit(1)
+
+        if text_to_url(text=result.get("title")) == scene_name:
+            result["site"] = site
+            return result
+
+    debug("Scene not found")
+    debug(text_to_url(text=result.get("title")))
+    debug(scene_name)
+    sys.exit(1)
+
+
+def scrape_scene(scene_json, url=None):
+    def generate_url():
+        site = SITE_URLS[scene.get("site")]["scene"]
+        scene_id = scene_json.get("id")
+        scene_name = text_to_url(text=scene_json.get("title"))
+        return f"{site}/{scene_id}/{scene_name}"
+
+    scene = {}
+    scene["title"] = scene_json.get("title")
+    scene["url"] = url or generate_url()
+    scene["date"] = datetime.strptime(scene_json.get("dateReleased"), "%Y-%m-%dT%H:%M:%S%z").strftime("%Y-%m-%d")
+    scene["studio"] = {"name": scene_json.get("collections")[0].get("name")}
+    scene["performers"] = [{"name": x.get("name")} for x in scene_json.get("actors")]
+    scene["tags"] = [{"name": x.get("name")} for x in scene_json.get("tags")]
+    scene["details"] = scene_json.get("description")
+    scene["image"] = scene_json.get("images").get("poster").get("0").get("xx").get("url")
+
+    return scene
+
+
+def scrape_actor_by_url(url):
+    actor_json = get_actor_by_url(url=url)
+    return scrape_actor(actor_json=actor_json, url=url)
+
+
+def scrape_actor_by_name(name):
+    actor_json = get_actor_by_name(name=name)
+    return scrape_actor(actor_json=actor_json)
+
+
+def get_actor_by_url(url):
+    actor_id = re.search(r"/(\d+)/*", url).group(1)
+    headers = {"Instance": get_token(site=urlparse(url)), "User-Agent": USER_AGENT}
+
+    try:
+        res = requests.get(f"{ACTOR_API_URL}/{actor_id}", headers=headers, timeout=(3, 5))
+        assert res.status_code == 200
+    except (requests.exceptions.RequestException, AssertionError):
+        debug(f"Request status: {res.status_code}")
+        debug(f"Request reason: {res.reason}")
+        debug(f"Request url: {res.url}")
+        debug(f"Request headers: {res.request.headers}")
+        sys.exit(1)
+
+    return res.json().get("result")
+
+
+def get_actor_by_name(name):
+    actor_name = text_to_url(text=name)
+
+    for site in SITE_URLS:
+        headers = {"Instance": get_token(site=urlparse(SITE_URLS[site]["actor"])), "User-Agent": USER_AGENT}
+
         try:
-            check_url = re.sub('.+/', '', url)
-            if check_url.isdigit():
-                found_scene_id = check_url
-            else:
-                found_scene_id = re.search(r"/(\d+)/*", url).group(1)
-            token = r.cookies.get_dict().get("instance_token")
-            if token is None:
-                debug("Can't get the instance_token from the cookie")
-                sys.exit(1)
+            res = requests.get(f"{ACTOR_API_URL}?limit=1&search={actor_name}", headers=headers, timeout=(3, 5))
+            result = res.json().get("result")[0]
+        except requests.exceptions.RequestException:
+            debug(f"Request status: {res.status_code}")
+            debug(f"Request status: {res.reason}")
+            debug(f"Request status: {res.url}")
+            debug(f"Request status: {res.headers}")
+            sys.exit(1)
+
+        if text_to_url(text=result.get("name")) == actor_name:
+            result["site"] = site
+            return result
+
+    debug("Performer not found")
+    debug(text_to_url(text=result.get("name")))
+    debug(actor_name)
+    sys.exit(1)
+
+
+def scrape_actor(actor_json, url=None):
+    def generate_url():
+        site = SITE_URLS[actor_json.get("site")]["actor"]
+        actor_id = actor_json.get("id")
+        actor_name = text_to_url(text=actor_json.get("name"))
+        return f"{site}/{actor_id}/{actor_name}"
+
+    def country_replace():
+        country = actor_json.get("birthPlace").split(", ")[-1]
+        return "USA" if country.strip() in USA_BIRTHPLACES else country
+
+    def generate_aliases():
+        aliases = actor_json.get("aliases")
+        try:
+            aliases.remove(actor_json.get("name"))
         except ValueError:
-            debug("Error to get information from the request\nAre you sure that the URL is from the MindGeek Network ?")
-            sys.exit(1)
-        write_config(url, token, today_string)
-    if not found_scene_id.isdigit():
-        debug("The ID is not a digit")
-        sys.exit(1)
-    return found_scene_id, token
-
-
-def check_config(url, date_today):
-    my_domain = urlparse(url).netloc
-    token = ""
-    found_scene_id = ""
-    if os.path.isfile(SET_FILE_URL):
-        config = ConfigParser()
-        config.read(SET_FILE_URL)
-        try:
-            file_instance = config.get(my_domain, 'instance')
-            file_date = config.get(my_domain, 'date')
-            past = datetime.strptime(file_date, '%Y-%m-%d')
-            difference = date_today - past
-            if difference.days == 0:
-                # date is within 24 hours so using old instance
-                match = re.search(r"/(\d+)/*", url)
-                if match is None:
-                    debug('The ID can\'t be determined (RegEx). Maybe wrong url?')
-                    sys.exit(1)
-                found_scene_id = match.group(1)
-                token = file_instance
-                #debug("Using token from {}".format(SET_FILE_URL))
-            else:
-                debug("Token from the past, getting new one".format(SET_FILE_URL))
-        except NoSectionError:
             pass
-    return token, found_scene_id
+        return ", ".join(aliases)
+
+    actor = {}
+    actor["name"] = actor_json.get("name")
+    actor["aliases"] = generate_aliases()
+    actor["gender"] = actor_json.get("gender")
+    actor["birthdate"] = datetime.strptime(actor_json.get("birthday"), "%Y-%m-%dT%H:%M:%S%z").strftime("%Y-%m-%d")
+    actor["country"] = country_replace()
+    actor["height"] = str(actor_json.get("height") + 100)
+    actor["measurements"] = actor_json.get("measurements")
+    actor["fake_tits"] = "Yes" if [x for x in actor_json.get("tags") if x.get("name") == "Enhanced"] else "No"
+    actor["url"] = url or generate_url()
+    actor["tags"] = [{"name": x.get("name")} for x in actor_json.get("tags")]
+
+    return actor
 
 
-def write_config(url, token, date_today):
-    my_domain = urlparse(url).netloc
-    config = ConfigParser()
-    config.read(SET_FILE_URL)
-    try:
-        config.get(my_domain, 'url')
-    except NoSectionError:
-        config.add_section(my_domain)
-    config.set(my_domain, 'url', url)
-    config.set(my_domain, 'instance', token)
-    config.set(my_domain, 'date', date_today)
-    with open(SET_FILE_URL, 'w') as configfile:
-        config.write(configfile)
-    return
-
-
-def search_scene(title):
-    # Clean your title
-    # Remove extension and replace .-_ by a space
-    title_filter = re.sub(r'[-._\']', ' ', os.path.splitext(title)[0])
-    # Remove resolution
-    title_filter = re.sub(
-        r'\sXXX|\s1080p|720p|2160p|KTR|RARBG|\scom\s|\[|]|\sHD|\sSD|', '', title_filter)
-    # Remove Date
-    title_filter = re.sub(
-        r'\s\d{2}\s\d{2}\s\d{2}|\s\d{4}\s\d{2}\s\d{2}', '', title_filter)
-    debug("Your title:{}".format(title_filter))
-    if os.path.isfile(SET_FILE_URL):
-        config = ConfigParser()
-        config.read(SET_FILE_URL)
-        dict_config = dict(config.items())
-        for section in dict_config:
-            if section == "DEFAULT":
-                continue
-            url = config.get(section, 'url')
-            debug("============\nSearching on: {}".format(
-                urlparse(url).netloc))
-            _, headers = scraping_url(url)
-            # Filter the filename to remove possible mistake
-
-            search_url = 'https://site-api.project1service.com/v2/releases?title={}&type=scene'.format(
-                title_filter)
-            api_json = send_request(search_url, headers)
-            for result in api_json:
-                title_filename = ""
-                try:
-                    filename = result['videos']['mediabook']['files']["320p"]['urls']['download']
-                    title_filename = re.sub(r'^.+filename=', '', filename)
-                    title_filename = re.sub(r'_.+$', '', title_filename)
-                except:
-                    pass
-                if title_filename:
-                    making_url = re.sub(
-                        r'/\d+/*.+', '/' + str(result.get("id")) + "/" + title_filename, url)
-                else:
-                    making_url = re.sub(
-                        r'/\d+/*.+', '/' + str(result.get("id")) + "/", url)
-                save_json(result, making_url)
-                ratio = round(difflib.SequenceMatcher(
-                    None, title_filter, result.get('title')).ratio(), 3)
-
-                debug("Title:{} |Ratio:{}".format(
-                    result.get('title'), ratio))
-                if ratio > SET_RATIO:
-                    return result, making_url, headers
-        debug("Didn't find a match")
-        sys.exit(1)
+def main():
+    args = argument_handler()
+    fragment = json.loads(sys.stdin.read())
+    if args.scene_url:
+        scraped_json = scrape_scene_by_url(url=fragment["url"])
+    elif args.scene_frag:
+        scraped_json = scrape_scene_by_title(title=fragment["title"])
+    elif args.actor_url:
+        scraped_json = scrape_actor_by_url(url=fragment["url"])
+    elif args.actor_frag:
+        scraped_json = [scrape_actor_by_name(name=fragment["name"])]
     else:
-        debug("Can't search the scene ({} is missing)\nYou need to scrape 1 URL from the network, to be enable to search with your title on this network.".format(SET_FILE_URL))
         sys.exit(1)
 
-
-def send_request(url, headers):
-    try:
-        r = requests.get(url, headers=headers, timeout=(3, 5))
-    except requests.exceptions.RequestException:
-        debug("An error has occurred")
-        debug("Request status: {}".format(r.status_code))
-        try:
-            debug("Message: {}".format(r.json()[0].get('message')))
-        except:
-            pass
-        debug("Check your MindGeekAPI.log for more details")
-        with open("MindGeekAPI.log", 'w', encoding='utf-8') as f:
-            f.write("Headers used: {}\n".format(headers))
-            f.write("API URL: {}\n".format(url))
-            f.write("Response:\n{}".format(r.text))
-        sys.exit(1)
-    try:
-        if type(r.json()) == list:
-            api_json = r.json()[0].get('message')
-            debug("Message: {}".format(api_json))
-            sys.exit(1)
-        else:
-            api_json = r.json().get('result')
-    except:
-        debug("Error getting the JSON from request")
-        sys.exit(1)
-    return api_json
-
-# Scrape JSON for Stash
+    print(json.dumps(scraped_json))
 
 
-def scraping_json(api_json, url=""):
-    scrape = {}
-    scrape['title'] = api_json.get('title')
-    date = datetime.strptime(api_json.get(
-        'dateReleased'), '%Y-%m-%dT%H:%M:%S%z')
-    scrape['date'] = str(date.date())
-    scrape['details'] = api_json.get('description')
-    if url:
-        scrape['url'] = url
-    try:
-        api_json['collections'][0].get('name') # If this create a error it wont continue so no studio at all
-        scrape['studio'] = {}
-        scrape['studio']['name'] = api_json['collections'][0].get('name')
-    except:
-        debug("No studio")
-    if 'female_only' in sys.argv:
-        perf = []
-        for x in api_json.get('actors'):
-            if x.get('gender') == "female":
-                perf.append({"name": x.get('name')})
-        scrape['performers'] = perf
-    else:
-        scrape['performers'] = [{"name": x.get('name')} for x in api_json.get('actors')]
-    scrape['tags'] = [{"name": x.get('name')} for x in api_json.get('tags')]
-    # Image can be poster or poster_fallback
-    backup_image=None
-    if type(api_json['images']['poster']) is list:
-        for image_type in api_json['images']['poster']:
-            try:
-                if '/poster_fallback/' in image_type['xx'].get('url') and backup_image is None:
-                    backup_image = image_type['xx'].get('url')
-                    continue
-                if '/poster/' in image_type['xx'].get('url'):
-                    scrape['image'] = image_type['xx'].get('url')
-                    break
-            except TypeError:
-                pass
-    else:
-        if type(api_json['images']['poster']) is dict:
-            for _, img_value in api_json['images']['poster'].items():
-                try:
-                    if '/poster_fallback/' in img_value['xx'].get('url') and backup_image is None:
-                        backup_image = img_value['xx'].get('url')
-                        continue
-                    if '/poster/' in img_value['xx'].get('url'):
-                        scrape['image'] = img_value['xx'].get('url')
-                        break
-                except TypeError:
-                    pass
-    if scrape.get('image') is None and backup_image:
-        debug("Using alternate image")
-        scrape['image'] = backup_image
-    return scrape
-
-# Saving the JSON to a file (Write '- logJSON' below MindGeekAPI.py in MindGeekAPI.yml)
-
-
-def save_json(api_json, url):
-    if "logJSON" in sys.argv:
-        try:
-            os.makedirs(DIR_JSON)
-        except FileExistsError:
-            pass  # Dir already exist
-        api_json['url'] = url
-        filename = os.path.join(DIR_JSON, str(api_json['id'])+".json")
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(api_json, f, ensure_ascii=False, indent=4)
-
-
-def checking_local(url):
-    check_url = re.sub('.+/', '', url)
-    if check_url.isdigit():
-        found_scene_id = check_url
-    else:
-        found_scene_id = re.search(r"/(\d+)/*", url).group(1)
-    filename = os.path.join(DIR_JSON, found_scene_id+".json")
-    if (os.path.isfile(filename) == True):
-        debug("Using local JSON...")
-        with open(filename, encoding="utf-8") as json_file:
-            api_json = json.load(json_file)
-        return api_json
-    else:
-        return None
-
-
-fragment = json.loads(sys.stdin.read())
-
-if not fragment["url"]:
-    if fragment["title"]:
-        # Trying to find the scene
-        scene_api_json, scene_url, _ = search_scene(fragment["title"])
-        scraped_json = scraping_json(scene_api_json, scene_url)
-    else:
-        debug("There is no URL or Title.")
-        sys.exit(1)
-else:
-    # URL scraping
-    scene_url = fragment["url"]
-    # Check if the URL has a old format
-    if 'brazzers.com/scenes/view/id/' in scene_url:
-        debug("Probably a old url, need to redirect")
-        try:
-            r = requests.get(scene_url, headers={'User-Agent': USER_AGENT}, timeout=(3, 5))
-            scene_url = r.url
-        except:
-            debug("Redirect fail, could give incorrect result.")
-    # Search local JSON, return none if not found
-    use_local = checking_local(scene_url)
-    if use_local is None:
-        scene_id, request_headers = scraping_url(scene_url)
-        # Send to the API
-        api_URL = 'https://site-api.project1service.com/v2/releases/{}'.format(scene_id)
-        scene_api_json = send_request(api_URL, request_headers)
-    else:
-        scene_api_json = use_local
-    if scene_api_json.get('parent') is not None:
-        if scene_api_json['parent']['type'] == "scene":
-            scene_api_json = scene_api_json.get('parent')
-    scraped_json = scraping_json(scene_api_json, scene_url)
-    if use_local is None:
-        save_json(scene_api_json, scene_url)
-
-print(json.dumps(scraped_json))
-
-# Last Updated March 05, 2021
+if __name__ == "__main__":
+    main()
