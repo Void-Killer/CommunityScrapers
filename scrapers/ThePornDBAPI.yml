@@ -1,0 +1,35 @@
+name: "ThePornDBAPI"
+
+sceneByFragment:
+    action: script
+    script:
+      - C:\python\python.exe
+      - ThePornDBAPI.py
+      - --scene_frag
+
+sceneByURL:
+  - url:
+      - metadataapi
+    action: script
+    script:
+      - C:\python\python.exe
+      - ThePornDBAPI.py
+      - --scene_url
+
+
+performerByName:
+    action: script
+    script:
+      - C:\python\python.exe
+      - ThePornDBAPI.py
+      - --actor_frag
+
+
+performerByURL:
+  - url:
+      - metadataapi
+    action: script
+    script:
+      - C:\python\python.exe
+      - ThePornDBAPI.py
+      - --actor_url
