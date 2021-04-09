@@ -114,8 +114,9 @@ def get_scene_by_title(title):
             res = requests.get(
                 f"{SCENE_API_URL}?type=scene&limit=1&search={scene_name}", headers=headers, timeout=(3, 5)
             )
+            assert res.status_code == 200
             result = res.json().get("result")[0]
-        except requests.exceptions.RequestException:
+        except (requests.exceptions.RequestException, AssertionError):
             debug(f"Request status: {res.status_code}")
             debug(f"Request status: {res.reason}")
             debug(f"Request status: {res.url}")
@@ -186,8 +187,9 @@ def get_actor_by_name(name):
 
         try:
             res = requests.get(f"{ACTOR_API_URL}?limit=8&search={actor_name}", headers=headers, timeout=(3, 5))
+            assert res.status_code == 200
             result = res.json().get("result")
-        except requests.exceptions.RequestException:
+        except (requests.exceptions.RequestException, AssertionError):
             debug(f"Request status: {res.status_code}")
             debug(f"Request status: {res.reason}")
             debug(f"Request status: {res.url}")
@@ -216,7 +218,7 @@ def scrape_actor(actor_json, url=None):
         return f"{site}/{actor_id}/{actor_name}"
 
     def country_replace(actor):
-        country = actor.get("birthPlace").split(", ")[-1]
+        country = actor.get("birthPlace").split(", ")[-1].replace("United Kingdom", "UK")
         return "USA" if country.strip() in USA_BIRTHPLACES else country
 
     def generate_aliases(actor):
@@ -243,7 +245,6 @@ def scrape_actor(actor_json, url=None):
             actor["tags"] = [{"name": tag.get("name")} for tag in model.get("tags")]
             actor["image"] = model.get("images").get("card_main_rect").get("0").get("xl").get("url")
             actors.append(actor)
-        return actors
     else:
         actor = {}
         actor["name"] = actor_json.get("name")
@@ -257,7 +258,8 @@ def scrape_actor(actor_json, url=None):
         actor["url"] = url or generate_url(actor=actor_json)
         actor["tags"] = [{"name": tag.get("name")} for tag in actor_json.get("tags")]
         actor["image"] = actor_json.get("images").get("card_main_rect").get("0").get("xl").get("url")
-        return actor
+
+    return actors or actor
 
 
 def main():
@@ -272,6 +274,7 @@ def main():
     elif args.actor_frag:
         scraped_json = scrape_actor_by_name(name=fragment["name"])
     else:
+        debug("No param passed to script")
         sys.exit(1)
 
     print(json.dumps(scraped_json))
