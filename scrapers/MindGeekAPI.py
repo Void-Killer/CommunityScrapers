@@ -229,6 +229,7 @@ def scrape_actor(actor_json, url=None):
             pass
         return ", ".join(aliases)
 
+    actors = []
     if type(actor_json) is list:
         actors = []
         for model in actor_json:
@@ -239,9 +240,11 @@ def scrape_actor(actor_json, url=None):
             actor["birthdate"] = datetime.strptime(model.get("birthday"), "%Y-%m-%dT%H:%M:%S%z").strftime("%Y-%m-%d")
             actor["country"] = country_replace(actor=model)
             actor["height"] = str(model.get("height") + 100)
+            actor["weight"] = str(round(model.get("weight") / 2.205))
             actor["measurements"] = model.get("measurements")
             actor["fake_tits"] = "Yes" if [tag for tag in model.get("tags") if tag.get("name") == "Enhanced"] else "No"
             actor["url"] = url or generate_url(actor=model)
+            actor["details"] = model.get("bio")
             actor["tags"] = [{"name": tag.get("name")} for tag in model.get("tags")]
             actor["image"] = model.get("images").get("card_main_rect").get("0").get("xl").get("url")
             actors.append(actor)
@@ -253,9 +256,11 @@ def scrape_actor(actor_json, url=None):
         actor["birthdate"] = datetime.strptime(actor_json.get("birthday"), "%Y-%m-%dT%H:%M:%S%z").strftime("%Y-%m-%d")
         actor["country"] = country_replace(actor=actor_json)
         actor["height"] = str(actor_json.get("height") + 100)
+        actor["weight"] = str(round(actor_json.get("weight") / 2.205))
         actor["measurements"] = actor_json.get("measurements")
         actor["fake_tits"] = "Yes" if [tag for tag in actor_json.get("tags") if tag.get("name") == "Enhanced"] else "No"
         actor["url"] = url or generate_url(actor=actor_json)
+        actor["details"] = actor_json.get("bio")
         actor["tags"] = [{"name": tag.get("name")} for tag in actor_json.get("tags")]
         actor["image"] = actor_json.get("images").get("card_main_rect").get("0").get("xl").get("url")
 
