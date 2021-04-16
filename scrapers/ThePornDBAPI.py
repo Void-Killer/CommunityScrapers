@@ -164,9 +164,13 @@ def scrape_actor(actor_json, url=None):
         if country:
             return country.split(", ")[-1].replace("United Kingdom", "UK").replace("United States", "USA")
 
-    def height_replace(height):
-        if height:
-            return re.search("([0-9]*)", height).group(1)
+    def height_weight_extract(value):
+        if value:
+            return re.search("([0-9]*)", value).group(1)
+
+    def details_extract(details):
+        if details:
+            return details.replace("BIOGRAPHY:", "").replace("CLOSE BIO", "").strip()
 
     actors = []
     if type(actor_json) is list:
@@ -177,9 +181,14 @@ def scrape_actor(actor_json, url=None):
             actor["birthdate"] = model.get("extras").get("birthday")
             actor["country"] = country_replace(country=model.get("extras").get("birthplace"))
             actor["ethnicity"] = model.get("extras").get("ethnicity")
-            actor["height"] = height_replace(height=model.get("extras").get("height"))
+            actor["hair_color"] = model.get("extras").get("hair_colour")
+            actor["height"] = height_weight_extract(value=model.get("extras").get("height"))
+            actor["weight"] = height_weight_extract(value=model.get("extras").get("weight"))
             actor["measurements"] = model.get("extras").get("measurements")
+            actor["tattoos"] = model.get("extras").get("tattoos")
+            actor["piercings"] = model.get("extras").get("piercings")
             actor["url"] = url or f"{ACTOR_URL}/{model.get('slug')}"
+            actor["details"] = details_extract(details=model.get("bio"))
             actor["image"] = model.get("image")
             actors.append(actor)
     else:
@@ -190,9 +199,14 @@ def scrape_actor(actor_json, url=None):
         actor["birthdate"] = actor_json.get("extras").get("birthday")
         actor["country"] = country_replace(country=actor_json.get("extras").get("birthplace"))
         actor["ethnicity"] = actor_json.get("extras").get("ethnicity")
-        actor["height"] = height_replace(height=actor_json.get("extras").get("height"))
+        actor["hair_color"] = actor_json.get("extras").get("hair_colour")
+        actor["height"] = height_weight_extract(value=actor_json.get("extras").get("height"))
+        actor["weight"] = height_weight_extract(value=actor_json.get("extras").get("weight"))
         actor["measurements"] = actor_json.get("extras").get("measurements")
+        actor["tattoos"] = actor_json.get("extras").get("tattoos")
+        actor["piercings"] = actor_json.get("extras").get("piercings")
         actor["url"] = url or f"{ACTOR_URL}/{actor_json.get('slug')}"
+        actor["details"] = details_extract(details=actor_json.get("bio"))
         actor["image"] = actor_json.get("image")
 
     return actors or actor
