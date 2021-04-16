@@ -6,9 +6,10 @@ from argparse import ArgumentParser
 import requests
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:87.0) Gecko/20100101 Firefox/87.0"
-SCENE_API_URL = "https://api.metadataapi.net/scenes"
-ACTOR_API_URL = "https://api.metadataapi.net/performers"
+SCENE_API_URL = "https://metadataapi.net/api/scenes"
+ACTOR_API_URL = "https://metadataapi.net/api/performers"
 ACTOR_URL = "https://metadataapi.net/performers"
+API_KEY = "Z0jkfUe0xWCDAElL5HEVTFO8i6OohAu7MzGSQeoU"
 
 
 def argument_handler():
@@ -40,7 +41,7 @@ def scrape_scene_by_title(title):
 
 
 def get_scene_by_url(url):
-    headers = {"User-Agent": USER_AGENT}
+    headers = {"User-Agent": USER_AGENT, "Authorization": f"Bearer {API_KEY}"}
     scene_name = url.split("/")[-1]
 
     try:
@@ -65,7 +66,7 @@ def get_scene_by_title(title):
     except AttributeError:
         scene_name = text_to_url(text=title)
 
-    headers = {"User-Agent": USER_AGENT}
+    headers = {"User-Agent": USER_AGENT, "Authorization": f"Bearer {API_KEY}"}
 
     try:
         res = requests.get(f"{SCENE_API_URL}?parse={search_name}&limit=1", headers=headers, timeout=(3, 5))
@@ -113,7 +114,7 @@ def scrape_actor_by_name(name):
 
 
 def get_actor_by_url(url):
-    headers = {"User-Agent": USER_AGENT}
+    headers = {"User-Agent": USER_AGENT, "Authorization": f"Bearer {API_KEY}"}
     actor_name = url.split("/")[-1]
 
     try:
@@ -132,7 +133,7 @@ def get_actor_by_url(url):
 def get_actor_by_name(name):
     actors = []
     actor_name = text_to_url(text=name)
-    headers = {"User-Agent": USER_AGENT}
+    headers = {"User-Agent": USER_AGENT, "Authorization": f"Bearer {API_KEY}"}
 
     try:
         res = requests.get(f"{ACTOR_API_URL}?q={actor_name}", headers=headers, timeout=(3, 5))
