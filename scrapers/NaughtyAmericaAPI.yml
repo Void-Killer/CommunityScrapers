@@ -1,0 +1,17 @@
+name: "Naughty America"
+
+sceneByFragment:
+    action: script
+    script:
+      - C:\python\python.exe
+      - NaughtyAmericaAPI.py
+      - --scene_frag
+
+sceneByURL:
+  - url:
+      - naughtyamerica
+    action: script
+    script:
+      - C:\python\python.exe
+      - NaughtyAmericaAPI.py
+      - --scene_url
