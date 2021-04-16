@@ -64,7 +64,7 @@ def get_scene_by_title(title):
         scene_name = text_to_url(text=re.search(r"\((.+?)\)\s\(\d*-", title).group(1))
         search_name = f"{site_name}-{scene_name}"
     except AttributeError:
-        scene_name = text_to_url(text=title)
+        search_name = text_to_url(text=title)
 
     headers = {"User-Agent": USER_AGENT, "Authorization": f"Bearer {API_KEY}"}
 
@@ -80,9 +80,7 @@ def get_scene_by_title(title):
         debug(f"Request status: {res.headers}")
         sys.exit(1)
 
-    debug(search_name)
-    debug(text_to_url(text=result.get("slug")))
-    if text_to_url(text=result.get("slug")) == search_name:
+    if search_name in result.get("slug"):
         return result
 
     debug("Scene not found")
@@ -92,7 +90,7 @@ def get_scene_by_title(title):
 def scrape_scene(scene_json):
     scene = {}
     scene["title"] = scene_json.get("title")
-    scene["url"] = scene_json.get("url")
+    scene["url"] = scene_json.get("url").split("?")[0]
     scene["date"] = scene_json.get("date")
     scene["studio"] = {"name": scene_json.get("site").get("name")}
     scene["performers"] = [{"name": actor.get("name")} for actor in scene_json.get("performers")]
