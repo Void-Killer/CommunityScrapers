@@ -1,109 +1,145 @@
 import json
-import os
 import re
-import requests
 import sys
+from argparse import ArgumentParser
+from datetime import datetime
+
+import requests
+
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:87.0) Gecko/20100101 Firefox/87.0"
+SITE_URLS = {
+    "Tushy": "https://www.tushy.com/videos",
+    "Deeper": "https://www.vixen.com/videos",
+    "Vixen": "https://www.deeper.com/videos",
+}
 
 
-MINIMUM_VERSION_MAJOR = 3
-MINIMUM_VERSION_MINOR = 3
+def argument_handler():
+    parser = ArgumentParser()
+    command_group = parser.add_mutually_exclusive_group()
+    command_group.add_argument("--scene_url", action="store_true")
+    command_group.add_argument("--scene_frag", action="store_true")
+    return parser.parse_args()
 
 
-def log(*s):
-    print(*s, file=sys.stderr)
+def debug(*mgs):
+    print(*mgs, file=sys.stderr)
 
 
-def get_from_url(url_to_parse):
-    m = re.match(r'(?:https?://)?(?:www\.)?((\w+)\.com)/(?:videos/)?([a-z0-9-]+)', url_to_parse)
-    if m is None:
-        return None, None, None
-    return m.groups()
+def get_url_redirect(url):
+    headers = {"User-Agent": USER_AGENT}
 
-
-def make_request(request_url, origin_site):
     try:
-        r = requests.get(request_url, headers={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:79.0) Gecko/20100101 Firefox/79.0',
-            'Origin': origin_site,
-            'Referer': request_url
-        }, timeout=(3, 6))
-    except requests.exceptions.RequestException as e:
-        return None, e
-    if r.status_code == 200:
-        return r.text, None
-    return None, 'HTTP Error: %s' % r.status_code
+        res = requests.get(url, headers=headers, timeout=(3, 5))
+        assert res.status_code == 200
+    except (requests.exceptions.RequestException, AssertionError):
+        debug(f"Request status: {res.status_code}")
+        debug(f"Request reason: {res.reason}")
+        debug(f"Request url: {res.url}")
+        debug(f"Request headers: {res.request.headers}")
+        sys.exit(1)
+
+    return res.url
 
 
 def fetch_page_json(page_html):
-    matches = re.findall(r'window\.__APOLLO_STATE__ = (.+);$', page_html, re.MULTILINE)
-    return None if len(matches) == 0 else json.loads(matches[0])
+    match = re.search(r"__APOLLO_STATE__ = (.+);", page_html).group(1)
+    return json.loads(match)
 
 
-def save_json(scraped_json, video_id, save_location):
-    location = os.path.join('..', 'scraperJSON', 'VixenNetwork')
-    if save_location != 'save':
-        location = save_location
+def text_to_url(text):
+    return re.sub(r"[!:?\"']", "", text).strip().replace(" ", "-").lower()
+
+
+def scrape_scene_by_url(url):
+    url = get_url_redirect(url=url)
+    scene_json = get_scene_by_url(url=url)
+    return scrape_scene(scene_json=scene_json, url=url)
+
+
+def scrape_scene_by_title(title):
+    scene_json = get_scene_by_title(title=title)
+    return scrape_scene(scene_json=scene_json)
+
+
+def get_scene_by_url(url):
+    headers = {"User-Agent": USER_AGENT}
+
     try:
-        os.makedirs(location)
-    except FileExistsError:
-        pass
-    filename = os.path.join(location, '%s.json' % video_id)
-    with open(filename, 'w', encoding='utf-8') as f:
-        json.dump(scraped_json, f, ensure_ascii=False, indent=4)
+        res = requests.get(url, headers=headers, timeout=(3, 5))
+        assert res.status_code == 200
+        res_json = fetch_page_json(page_html=res.text)
+        site_name = re.search(r"\.(.+)\.", res.url).group(1)
+        scene_name = res.url.split("/")[-1]
+    except (requests.exceptions.RequestException, AssertionError):
+        debug(f"Request status: {res.status_code}")
+        debug(f"Request reason: {res.reason}")
+        debug(f"Request url: {res.url}")
+        debug(f"Request headers: {res.request.headers}")
+        sys.exit(1)
+
+    if f"Video:{site_name}:{scene_name}" in res_json:
+        return res_json.get(f"Video:{site_name}:{scene_name}")
+
+    debug("Scene not found")
+    sys.exit(1)
+
+
+def get_scene_by_title(title):
+    try:
+        scene_name = text_to_url(text=re.search(r"\((.+?)\)\s\(\d*-", title).group(1))
+    except AttributeError:
+        scene_name = text_to_url(text=title)
+    headers = {"User-Agent": USER_AGENT}
+
+    for site in SITE_URLS:
+        try:
+            res = requests.get(f"{SITE_URLS[site]}/{scene_name}", headers=headers, timeout=(3, 5))
+            res_json = fetch_page_json(page_html=res.text)
+            site_name = re.search(r"\.(.+)\.", res.url).group(1)
+            scene_name = res.url.split("/")[-1]
+        except (requests.exceptions.RequestException, AssertionError):
+            debug(f"Request status: {res.status_code}")
+            debug(f"Request reason: {res.reason}")
+            debug(f"Request url: {res.url}")
+            debug(f"Request headers: {res.request.headers}")
+            sys.exit(1)
+
+        if f"Video:{site_name}:{scene_name}" in res_json:
+            return res_json.get(f"Video:{site_name}:{scene_name}")
+
+    debug("Scene not found")
+    sys.exit(1)
+
+
+def scrape_scene(scene_json, url=None):
+    scene = {}
+    scene["title"] = scene_json.get("title")
+    scene["url"] = url or f"https:{scene_json.get('absoluteUrl')}"
+    scene["date"] = datetime.strptime(scene_json.get("releaseDate"), "%Y-%m-%dT%H:%M:%S.%fZ").strftime("%Y-%m-%d")
+    scene["studio"] = {"name": re.search(r"\.(.+)\.", scene.get("url")).group(1).title()}
+    scene["performers"] = [{"name": actor.get("name")} for actor in scene_json.get("models")]
+    scene["tags"] = [{"name": tag} for tag in scene_json.get("tags")]
+    scene["details"] = scene_json.get("description")
+    scene["image"] = scene_json.get("images").get("poster")[-1].get("src")
+
+    return scene
 
 
 def main():
-    stdin = sys.stdin.read()
-    log(stdin)
-    fragment = json.loads(stdin)
-    
-    if not fragment['url']:
-        log('No URL entered.')
+    args = argument_handler()
+    fragment = json.loads(sys.stdin.read())
+
+    if args.scene_url:
+        scraped_json = scrape_scene_by_url(url=fragment["url"])
+    elif args.scene_frag:
+        scraped_json = scrape_scene_by_title(title=fragment["title"])
+    else:
+        debug("No param passed to script")
         sys.exit(1)
-    url = fragment['url'].strip()
-    site, studio, slug = get_from_url(url)
-    if site is None:
-        log('The URL could not be parsed')
-        sys.exit(1)
-    response, err = make_request('https://%s/videos/%s' % (site, slug), 'https://%s' % site)
-    if err is not None:
-        log('Could not fetch page HTML', err)
-        sys.exit(1)
-    j = fetch_page_json(response)
-    if j is None:
-        log('Could not find JSON on page')
-        sys.exit(1)
-    scene_id = 'Video:%s:%s' % (studio, slug)
-    if scene_id not in j:
-        log('Could not locate scene within JSON')
-        sys.exit(1)
-    scene = j[scene_id]
-    scene_url = url
-    if scene['absoluteUrl'] is not None:
-        scene_url = 'https:%s' % scene['absoluteUrl']
-    scrape = {
-        'title': scene['title'],
-        'date': scene['releaseDate'][:10],
-        'details': scene['description'],
-        'url':  scene_url,
-        'studio': {
-            'name': studio
-        },
-        'performers': [{'name': x['name']} for x in scene['models']],
-        'tags': [{'name': x['name']} for x in scene['categories']],
-        'image': scene['images']['poster'][len(scene['images']['poster']) - 1]['src'],
-    }
-    if len(sys.argv) > 1:
-        save_json(j, scene['videoId'], sys.argv[1])
-    print(json.dumps(scrape))
+
+    print(json.dumps(scraped_json))
 
 
-if __name__ == '__main__':
-    if sys.version_info.major != MINIMUM_VERSION_MAJOR or sys.version_info.minor < MINIMUM_VERSION_MINOR:
-        log('Invalid Python version. Version %s.%s or later required.' % (MINIMUM_VERSION_MAJOR, MINIMUM_VERSION_MINOR))
-        sys.exit(1)
-    try:
-        main()
-    except Exception as e:
-        log(e)
-
+if __name__ == "__main__":
+    main()

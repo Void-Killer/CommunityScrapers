@@ -1,15 +1,19 @@
-name: "Vixen Media Group"
-sceneByURL:
-  - url:
-      - blacked.com/
-      - blackedraw.com/
-      - deeper.com/
-      - tushy.com/
-      - tushyraw.com/
-      - vixen.com/
+name: "Vixen Group"
+
+sceneByFragment:
     action: script
     script:
-      - python
+      - C:\python\python.exe
       - vixenNetwork.py
-      # - "save" # replace "save" with absolute file path of a directory to change default location
-# Last Updated February 24, 2021
+      - --scene_frag
+
+sceneByURL:
+  - url:
+      - deeper
+      - tushy
+      - vixen
+    action: script
+    script:
+      - C:\python\python.exe
+      - vixenNetwork.py
+      - --scene_url
