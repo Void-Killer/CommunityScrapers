@@ -54,7 +54,7 @@ def scrape_scene(raw_data):
     scene.date = raw_data.get("date")
     scene.studio = {"name": raw_data.get("site").get("name")}
     scene.performers = [{"name": actor.get("name")} for actor in raw_data.get("performers")]
-    scene.tags = [{"name": tag.get("name").capitalize()} for tag in raw_data.get("tags", {})]
+    scene.tags = [{"name": tag.get("name").title()} for tag in raw_data.get("tags", {})]
     scene.details = raw_data.get("description")
     scene.image = raw_data.get("image")
     return scene.json
@@ -109,32 +109,32 @@ def scrape_actor(raw_data, url=None):
         if details:
             return details.replace("BIOGRAPHY:", "").replace("CLOSE BIO", "").strip()
 
-    def parse_actor(performer):
-        actor = Performer()
-        actor.name = performer.get("name")
-        actor.aliases = ", ".join(performer.get("aliases", []))
-        actor.gender = performer.get("extras").get("gender")
-        actor.birthdate = performer.get("extras").get("birthday")
-        actor.country = country_replace(country=performer.get("extras").get("birthplace"))
-        actor.ethnicity = performer.get("extras").get("ethnicity")
-        actor.hair_color = performer.get("extras").get("hair_colour")
-        actor.height = height_weight_extract(value=performer.get("extras").get("height"))
-        actor.weight = height_weight_extract(value=performer.get("extras").get("weight"))
-        actor.measurements = performer.get("extras").get("measurements")
-        actor.tattoos = performer.get("extras").get("tattoos")
-        actor.piercings = performer.get("extras").get("piercings")
-        actor.url = url or f"{ACTOR_URL}/{performer.get('slug')}"
-        actor.details = details_extract(details=performer.get("bio"))
-        actor.image = performer.get("image")
-        return actor
-
     if type(raw_data) is list:
         actors = []
         for performer in raw_data:
-            actors.append(parse_actor(performer=performer).to_dict())
+            actor = Performer()
+            actor.name = performer.get("name")
+            actor.url = f"{ACTOR_URL}/{performer.get('slug')}"
+            actors.append(actor.to_dict())
         return json.dumps(actors)
     else:
-        return parse_actor(performer=raw_data).json
+        actor = Performer()
+        actor.name = raw_data.get("name")
+        actor.aliases = ", ".join(raw_data.get("aliases", []))
+        actor.gender = raw_data.get("extras").get("gender")
+        actor.birthdate = raw_data.get("extras").get("birthday")
+        actor.country = country_replace(country=raw_data.get("extras").get("birthplace"))
+        actor.ethnicity = raw_data.get("extras").get("ethnicity")
+        actor.hair_color = raw_data.get("extras").get("hair_colour")
+        actor.height = height_weight_extract(value=raw_data.get("extras").get("height"))
+        actor.weight = height_weight_extract(value=raw_data.get("extras").get("weight"))
+        actor.measurements = raw_data.get("extras").get("measurements")
+        actor.tattoos = raw_data.get("extras").get("tattoos")
+        actor.piercings = raw_data.get("extras").get("piercings")
+        actor.url = url
+        actor.details = details_extract(details=raw_data.get("bio"))
+        actor.image = raw_data.get("image")
+        return actor.json
 
 
 def main():

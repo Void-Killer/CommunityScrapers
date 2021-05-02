@@ -79,9 +79,9 @@ def scrape_scene(raw_data, url=None):
     scene.title = raw_data.get("title")
     scene.url = url or f"{SITE_URLS[raw_data.get('site')]}/{raw_data.get('slug')}"
     scene.date = datetime.strptime(raw_data.get("releaseDate"), "%Y-%m-%dT%H:%M:%S.%fZ").strftime("%Y-%m-%d")
-    scene.studio = {"name": re.search(r"\.(.+)\.", scene.url).group(1).capitalize()}
+    scene.studio = {"name": re.search(r"\.(.+)\.", scene.url).group(1).title()}
     scene.performers = [{"name": actor.get("name")} for actor in raw_data.get("models")]
-    scene.tags = [{"name": tag.capitalize()} for tag in raw_data.get("tags")]
+    scene.tags = [{"name": tag.title()} for tag in raw_data.get("tags")]
     scene.details = raw_data.get("description")
     scene.image = raw_data.get("images").get("poster")[-1].get("src")
     return scene.json

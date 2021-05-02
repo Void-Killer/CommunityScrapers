@@ -68,7 +68,6 @@ def scrape_scene_by_title(title):
 
 
 def get_scene_by_url(url):
-    debug(url)
     scene_id = re.search(r"/(\d+)/*", url).group(1)
     request_url = f"{SCENE_API_URL}/{scene_id}"
     headers = {"Instance": get_token(site=urlparse(url)), "User-Agent": USER_AGENT}
@@ -106,7 +105,7 @@ def scrape_scene(raw_data, url=None):
     scene.date = datetime.strptime(raw_data.get("dateReleased"), "%Y-%m-%dT%H:%M:%S%z").strftime("%Y-%m-%d")
     scene.studio = {"name": raw_data.get("collections")[0].get("name")}
     scene.performers = [{"name": actor.get("name")} for actor in raw_data.get("actors")]
-    scene.tags = [{"name": tag.get("name").capitalize()} for tag in raw_data.get("tags")]
+    scene.tags = [{"name": tag.get("name").title()} for tag in raw_data.get("tags")]
     scene.details = raw_data.get("description")
     scene.image = raw_data.get("images").get("poster").get("0").get("xx").get("url")
     return scene.json
@@ -169,30 +168,30 @@ def scrape_actor(raw_data, url=None):
             pass
         return ", ".join(aliases)
 
-    def parse_actor(performer):
-        actor = Performer()
-        actor.name = performer.get("name")
-        actor.aliases = generate_aliases(actor=performer)
-        actor.gender = performer.get("gender")
-        actor.birthdate = datetime.strptime(performer.get("birthday"), "%Y-%m-%dT%H:%M:%S%z").strftime("%Y-%m-%d")
-        actor.country = country_replace(actor=performer)
-        actor.height = str(performer.get("height") + 100)
-        actor.weight = str(round(performer.get("weight") / 2.205))
-        actor.measurements = performer.get("measurements")
-        actor.fake_tits = "Yes" if [tag for tag in performer.get("tags") if tag.get("name") == "Enhanced"] else "No"
-        actor.url = url or generate_url(actor=performer)
-        actor.details = performer.get("bio")
-        actor.tags = [{"name": tag.get("name").capitalize()} for tag in performer.get("tags")]
-        actor.image = performer.get("images").get("card_main_rect").get("0").get("xl").get("url")
-        return actor
-
     if type(raw_data) is list:
         actors = []
         for performer in raw_data:
-            actors.append(parse_actor(performer=performer).to_dict())
+            actor = Performer()
+            actor.name = performer.get("name")
+            actor.url = generate_url(actor=performer)
+            actors.append(actor.to_dict())
         return json.dumps(actors)
     else:
-        return parse_actor(performer=raw_data).json
+        actor = Performer()
+        actor.name = raw_data.get("name")
+        actor.aliases = generate_aliases(actor=raw_data)
+        actor.gender = raw_data.get("gender")
+        actor.birthdate = datetime.strptime(raw_data.get("birthday"), "%Y-%m-%dT%H:%M:%S%z").strftime("%Y-%m-%d")
+        actor.country = country_replace(actor=raw_data)
+        actor.height = str(raw_data.get("height") + 100)
+        actor.weight = str(round(raw_data.get("weight") / 2.205))
+        actor.measurements = raw_data.get("measurements")
+        actor.fake_tits = "Yes" if [tag for tag in raw_data.get("tags") if tag.get("name") == "Enhanced"] else "No"
+        actor.url = url or generate_url(actor=raw_data)
+        actor.details = raw_data.get("bio")
+        actor.tags = [{"name": tag.get("name").title()} for tag in raw_data.get("tags")]
+        actor.image = raw_data.get("images").get("card_main_rect").get("0").get("xl").get("url")
+        return actor.json
 
 
 def main():

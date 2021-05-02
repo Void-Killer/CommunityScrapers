@@ -67,7 +67,7 @@ def scrape_scene(raw_data, url=None):
     scene.date = datetime.utcfromtimestamp(raw_data.get("published_at")).strftime("%Y-%m-%d")
     scene.studio = {"name": raw_data.get("site")}
     scene.performers = [{"name": actor} for actor in raw_data.get("performers")]
-    scene.tags = [{"name": tag.capitalize()} for tag in raw_data.get("fantasies")]
+    scene.tags = [{"name": tag.title()} for tag in raw_data.get("fantasies")]
     scene.details = raw_data.get("synopsis")
     scene.image = generate_image_url()
     return scene.json
