@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 class Resource:
     def to_dict(self):
-        return {key.replace("_", ""): val for key, val in self.__dict__.items() if "_multi_res_list" not in key}
+        return {key.replace("_", ""): val for key, val in self.__dict__.items() if val}
 
     @property
     def json(self):
@@ -13,21 +13,22 @@ class Resource:
 
     @staticmethod
     def validate_str_val(val, attr_name="", err_msg=None):
-        if not isinstance(val, str):
+        if val and not isinstance(val, str):
             raise ValueError(err_msg if err_msg else f"{attr_name}: got {type(val).__name__} and not str")
         return val
 
     def validate_range_val(self, val, val_range, attr_name=""):
-        if val.lower() not in val_range:
+        if val and val.lower() not in val_range:
             raise ValueError(f"{attr_name}: {val} is not in range {val_range}")
         return val
 
     def validate_date_val(self, val, attr_name=""):
         self.validate_str_val(val, attr_name=attr_name)
-        try:
-            datetime.strptime(val, "%Y-%m-%d")
-        except ValueError:
-            raise ValueError(f"{attr_name} {val} data format, should be YYYY-MM-DD")
+        if val:
+            try:
+                datetime.strptime(val, "%Y-%m-%d")
+            except ValueError:
+                raise ValueError(f"{attr_name} {val} data format, should be YYYY-MM-DD")
         return val
 
     def validate_url_val(self, val, attr_name=""):
