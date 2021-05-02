@@ -1,163 +1,102 @@
 import json
 import re
 import sys
-from argparse import ArgumentParser
 
-import requests
+from utils.resource import Performer, Scene
+from utils.utilities import USER_AGENT, argument_handler, debug, get_data, text_to_slug
 
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:87.0) Gecko/20100101 Firefox/87.0"
 SCENE_API_URL = "https://metadataapi.net/api/scenes"
 ACTOR_API_URL = "https://metadataapi.net/api/performers"
 ACTOR_URL = "https://metadataapi.net/performers"
 API_KEY = "Z0jkfUe0xWCDAElL5HEVTFO8i6OohAu7MzGSQeoU"
 
 
-def argument_handler():
-    parser = ArgumentParser()
-    command_group = parser.add_mutually_exclusive_group()
-    command_group.add_argument("--scene_url", action="store_true")
-    command_group.add_argument("--scene_frag", action="store_true")
-    command_group.add_argument("--actor_url", action="store_true")
-    command_group.add_argument("--actor_frag", action="store_true")
-    return parser.parse_args()
-
-
-def debug(*mgs):
-    print(*mgs, file=sys.stderr)
-
-
-def text_to_url(text):
-    return re.sub(r"[!:?\"']", "", text).strip().replace(" ", "-").lower()
-
-
 def scrape_scene_by_url(url):
-    scene_json = get_scene_by_url(url=url)
-    return scrape_scene(scene_json=scene_json)
+    raw_data = get_scene_by_url(url=url)
+    return scrape_scene(raw_data=raw_data)
 
 
 def scrape_scene_by_title(title):
-    scene_json = get_scene_by_title(title=title)
-    return scrape_scene(scene_json=scene_json)
+    raw_data = get_scene_by_title(title=title)
+    return scrape_scene(raw_data=raw_data)
 
 
 def get_scene_by_url(url):
-    headers = {"User-Agent": USER_AGENT, "Authorization": f"Bearer {API_KEY}"}
     scene_name = url.split("/")[-1]
-
-    try:
-        res = requests.get(f"{SCENE_API_URL}/{scene_name}", headers=headers, timeout=(3, 5))
-        assert res.status_code == 200
-    except (requests.exceptions.RequestException, AssertionError):
-        debug(f"Request status: {res.status_code}")
-        debug(f"Request reason: {res.reason}")
-        debug(f"Request url: {res.url}")
-        debug(f"Request headers: {res.request.headers}")
-        sys.exit(1)
-
-    return res.json().get("data")
+    request_url = f"{SCENE_API_URL}/{scene_name}"
+    headers = {"User-Agent": USER_AGENT, "Authorization": f"Bearer {API_KEY}"}
+    return get_data(url=request_url, headers=headers).json().get("data")
 
 
 def get_scene_by_title(title):
     try:
         parsed_site = re.search(r"\[(.*?)\]", title).group(1)
-        site_name = text_to_url(text=" ".join(re.findall("([A-Z][^A-Z]*)", parsed_site)))
-        scene_name = text_to_url(text=re.search(r"\((.+?)\)\s\(\d*-", title).group(1))
+        site_name = text_to_slug(text=" ".join(re.findall("([A-Z][^A-Z]*)", parsed_site)))
+        scene_name = text_to_slug(text=re.search(r"\((.+?)\)\s\(\d*-", title).group(1))
         search_name = f"{site_name}-{scene_name}"
     except AttributeError:
-        search_name = text_to_url(text=title)
-
+        search_name = text_to_slug(text=title)
+    url = f"{SCENE_API_URL}?parse={search_name}&limit=1"
     headers = {"User-Agent": USER_AGENT, "Authorization": f"Bearer {API_KEY}"}
+    res = get_data(url=url, headers=headers).json().get("data")[0]
 
-    try:
-        res = requests.get(f"{SCENE_API_URL}?parse={search_name}&limit=1", headers=headers, timeout=(3, 5))
-        assert res.status_code == 200
-        debug(res.json())
-        result = res.json().get("data")[0]
-    except (requests.exceptions.RequestException, AssertionError):
-        debug(f"Request status: {res.status_code}")
-        debug(f"Request status: {res.reason}")
-        debug(f"Request status: {res.url}")
-        debug(f"Request status: {res.headers}")
-        sys.exit(1)
-
-    if search_name in result.get("slug"):
-        return result
+    if search_name in res.get("slug"):
+        return res
 
     debug("Scene not found")
     sys.exit(1)
 
 
-def scrape_scene(scene_json):
-    scene = {}
-    scene["title"] = scene_json.get("title")
-    scene["url"] = scene_json.get("url").split("?")[0]
-    scene["date"] = scene_json.get("date")
-    scene["studio"] = {"name": scene_json.get("site").get("name")}
-    scene["performers"] = [{"name": actor.get("name")} for actor in scene_json.get("performers")]
-    scene["tags"] = [{"name": tag.get("name")} for tag in scene_json.get("tags")]
-    scene["details"] = scene_json.get("description")
-    scene["image"] = scene_json.get("image")
-
-    return scene
+def scrape_scene(raw_data):
+    scene = Scene()
+    scene.title = raw_data.get("title")
+    scene.url = raw_data.get("url").split("?")[0].replace("site-ma.brazzers.com/scene", "www.brazzers.com/video")
+    scene.date = raw_data.get("date")
+    scene.studio = {"name": raw_data.get("site").get("name")}
+    scene.performers = [{"name": actor.get("name")} for actor in raw_data.get("performers")]
+    scene.tags = [{"name": tag.get("name").capitalize()} for tag in raw_data.get("tags", {})]
+    scene.details = raw_data.get("description")
+    scene.image = raw_data.get("image")
+    return scene.json
 
 
 def scrape_actor_by_url(url):
-    actor_json = get_actor_by_url(url=url)
-    return scrape_actor(actor_json=actor_json, url=url)
+    raw_data = get_actor_by_url(url=url)
+    return scrape_actor(raw_data=raw_data, url=url)
 
 
 def scrape_actor_by_name(name):
-    actor_json = get_actor_by_name(name=name)
-    return scrape_actor(actor_json=actor_json)
+    raw_data = get_actor_by_name(name=name)
+    return scrape_actor(raw_data=raw_data)
 
 
 def get_actor_by_url(url):
-    headers = {"User-Agent": USER_AGENT, "Authorization": f"Bearer {API_KEY}"}
     actor_name = url.split("/")[-1]
-
-    try:
-        res = requests.get(f"{ACTOR_API_URL}/{actor_name}", headers=headers, timeout=(3, 5))
-        assert res.status_code == 200
-    except (requests.exceptions.RequestException, AssertionError):
-        debug(f"Request status: {res.status_code}")
-        debug(f"Request reason: {res.reason}")
-        debug(f"Request url: {res.url}")
-        debug(f"Request headers: {res.request.headers}")
-        sys.exit(1)
-
-    return res.json().get("data")
+    request_url = f"{ACTOR_API_URL}/{actor_name}"
+    headers = {"User-Agent": USER_AGENT, "Authorization": f"Bearer {API_KEY}"}
+    return get_data(url=request_url, headers=headers).json().get("data")
 
 
 def get_actor_by_name(name):
     actors = []
-    actor_name = text_to_url(text=name)
+    actor_name = text_to_slug(text=name)
+    url = f"{ACTOR_API_URL}?q={actor_name}"
     headers = {"User-Agent": USER_AGENT, "Authorization": f"Bearer {API_KEY}"}
+    res = get_data(url=url, headers=headers).json().get("data")
 
-    try:
-        res = requests.get(f"{ACTOR_API_URL}?q={actor_name}", headers=headers, timeout=(3, 5))
-        assert res.status_code == 200
-        result = res.json().get("data")
-    except (requests.exceptions.RequestException, AssertionError):
-        debug(f"Request status: {res.status_code}")
-        debug(f"Request status: {res.reason}")
-        debug(f"Request status: {res.url}")
-        debug(f"Request status: {res.headers}")
-        sys.exit(1)
-
-    for match in result:
+    for match in res:
         if actor_name in match.get("slug"):
             if not [actor for actor in actors if match.get("id") == actor.get("id")]:
                 actors.append(match)
 
     if actors:
         return actors
-    else:
-        debug("Performer not found")
-        debug(actor_name)
-        sys.exit(1)
+
+    debug("Performer not found")
+    sys.exit(1)
 
 
-def scrape_actor(actor_json, url=None):
+def scrape_actor(raw_data, url=None):
     def country_replace(country):
         if country:
             return country.split(", ")[-1].replace("United Kingdom", "UK").replace("United States", "USA")
@@ -170,49 +109,38 @@ def scrape_actor(actor_json, url=None):
         if details:
             return details.replace("BIOGRAPHY:", "").replace("CLOSE BIO", "").strip()
 
-    actors = []
-    if type(actor_json) is list:
-        for model in actor_json:
-            actor = {}
-            actor["name"] = model.get("name")
-            actor["gender"] = model.get("extras").get("gender")
-            actor["birthdate"] = model.get("extras").get("birthday")
-            actor["country"] = country_replace(country=model.get("extras").get("birthplace"))
-            actor["ethnicity"] = model.get("extras").get("ethnicity")
-            actor["hair_color"] = model.get("extras").get("hair_colour")
-            actor["height"] = height_weight_extract(value=model.get("extras").get("height"))
-            actor["weight"] = height_weight_extract(value=model.get("extras").get("weight"))
-            actor["measurements"] = model.get("extras").get("measurements")
-            actor["tattoos"] = model.get("extras").get("tattoos")
-            actor["piercings"] = model.get("extras").get("piercings")
-            actor["url"] = url or f"{ACTOR_URL}/{model.get('slug')}"
-            actor["details"] = details_extract(details=model.get("bio"))
-            actor["image"] = model.get("image")
-            actors.append(actor)
-    else:
-        actor = {}
-        actor["name"] = actor_json.get("name")
-        actor["aliases"] = ", ".join(actor_json.get("aliases"))
-        actor["gender"] = actor_json.get("extras").get("gender")
-        actor["birthdate"] = actor_json.get("extras").get("birthday")
-        actor["country"] = country_replace(country=actor_json.get("extras").get("birthplace"))
-        actor["ethnicity"] = actor_json.get("extras").get("ethnicity")
-        actor["hair_color"] = actor_json.get("extras").get("hair_colour")
-        actor["height"] = height_weight_extract(value=actor_json.get("extras").get("height"))
-        actor["weight"] = height_weight_extract(value=actor_json.get("extras").get("weight"))
-        actor["measurements"] = actor_json.get("extras").get("measurements")
-        actor["tattoos"] = actor_json.get("extras").get("tattoos")
-        actor["piercings"] = actor_json.get("extras").get("piercings")
-        actor["url"] = url or f"{ACTOR_URL}/{actor_json.get('slug')}"
-        actor["details"] = details_extract(details=actor_json.get("bio"))
-        actor["image"] = actor_json.get("image")
+    def parse_actor(performer):
+        actor = Performer()
+        actor.name = performer.get("name")
+        actor.aliases = ", ".join(performer.get("aliases", []))
+        actor.gender = performer.get("extras").get("gender")
+        actor.birthdate = performer.get("extras").get("birthday")
+        actor.country = country_replace(country=performer.get("extras").get("birthplace"))
+        actor.ethnicity = performer.get("extras").get("ethnicity")
+        actor.hair_color = performer.get("extras").get("hair_colour")
+        actor.height = height_weight_extract(value=performer.get("extras").get("height"))
+        actor.weight = height_weight_extract(value=performer.get("extras").get("weight"))
+        actor.measurements = performer.get("extras").get("measurements")
+        actor.tattoos = performer.get("extras").get("tattoos")
+        actor.piercings = performer.get("extras").get("piercings")
+        actor.url = url or f"{ACTOR_URL}/{performer.get('slug')}"
+        actor.details = details_extract(details=performer.get("bio"))
+        actor.image = performer.get("image")
+        return actor
 
-    return actors or actor
+    if type(raw_data) is list:
+        actors = []
+        for performer in raw_data:
+            actors.append(parse_actor(performer=performer).to_dict())
+        return json.dumps(actors)
+    else:
+        return parse_actor(performer=raw_data).json
 
 
 def main():
     args = argument_handler()
     fragment = json.loads(sys.stdin.read())
+
     if args.scene_url:
         scraped_json = scrape_scene_by_url(url=fragment["url"])
     elif args.scene_frag:
@@ -225,7 +153,7 @@ def main():
         debug("No param passed to script")
         sys.exit(1)
 
-    print(json.dumps(scraped_json))
+    print(scraped_json)
 
 
 if __name__ == "__main__":

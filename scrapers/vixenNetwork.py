@@ -1,12 +1,11 @@
 import json
 import re
 import sys
-from argparse import ArgumentParser
 from datetime import datetime
 
-import requests
+from utils.resource import Scene
+from utils.utilities import USER_AGENT, argument_handler, debug, get_data, text_to_slug
 
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:87.0) Gecko/20100101 Firefox/87.0"
 SITE_URLS = {
     "Tushy": "https://www.tushy.com/videos",
     "Deeper": "https://www.vixen.com/videos",
@@ -14,32 +13,9 @@ SITE_URLS = {
 }
 
 
-def argument_handler():
-    parser = ArgumentParser()
-    command_group = parser.add_mutually_exclusive_group()
-    command_group.add_argument("--scene_url", action="store_true")
-    command_group.add_argument("--scene_frag", action="store_true")
-    return parser.parse_args()
-
-
-def debug(*mgs):
-    print(*mgs, file=sys.stderr)
-
-
 def get_url_redirect(url):
     headers = {"User-Agent": USER_AGENT}
-
-    try:
-        res = requests.get(url, headers=headers, timeout=(3, 5))
-        assert res.status_code == 200
-    except (requests.exceptions.RequestException, AssertionError):
-        debug(f"Request status: {res.status_code}")
-        debug(f"Request reason: {res.reason}")
-        debug(f"Request url: {res.url}")
-        debug(f"Request headers: {res.request.headers}")
-        sys.exit(1)
-
-    return res.url
+    return get_data(url=url, headers=headers).url
 
 
 def fetch_page_json(page_html):
@@ -47,36 +23,23 @@ def fetch_page_json(page_html):
     return json.loads(match)
 
 
-def text_to_url(text):
-    return re.sub(r"[!:?\"']", "", text).strip().replace(" ", "-").lower()
-
-
 def scrape_scene_by_url(url):
     url = get_url_redirect(url=url)
-    scene_json = get_scene_by_url(url=url)
-    return scrape_scene(scene_json=scene_json, url=url)
+    raw_data = get_scene_by_url(url=url)
+    return scrape_scene(raw_data=raw_data, url=url)
 
 
 def scrape_scene_by_title(title):
-    scene_json = get_scene_by_title(title=title)
-    return scrape_scene(scene_json=scene_json)
+    raw_data = get_scene_by_title(title=title)
+    return scrape_scene(raw_data=raw_data)
 
 
 def get_scene_by_url(url):
     headers = {"User-Agent": USER_AGENT}
-
-    try:
-        res = requests.get(url, headers=headers, timeout=(3, 5))
-        assert res.status_code == 200
-        res_json = fetch_page_json(page_html=res.text)
-        site_name = re.search(r"\.(.+)\.", res.url).group(1)
-        scene_name = res.url.split("/")[-1]
-    except (requests.exceptions.RequestException, AssertionError):
-        debug(f"Request status: {res.status_code}")
-        debug(f"Request reason: {res.reason}")
-        debug(f"Request url: {res.url}")
-        debug(f"Request headers: {res.request.headers}")
-        sys.exit(1)
+    res = get_data(url=url, headers=headers)
+    res_json = fetch_page_json(page_html=res.text)
+    site_name = re.search(r"\.(.+)\.", res.url).group(1)
+    scene_name = res.url.split("/")[-1]
 
     if f"Video:{site_name}:{scene_name}" in res_json:
         return res_json.get(f"Video:{site_name}:{scene_name}")
@@ -87,43 +50,41 @@ def get_scene_by_url(url):
 
 def get_scene_by_title(title):
     try:
-        scene_name = text_to_url(text=re.search(r"\((.+?)\)\s\(\d*-", title).group(1))
+        scene_name = text_to_slug(text=re.search(r"\((.+?)\)\s\(\d*-", title).group(1))
     except AttributeError:
-        scene_name = text_to_url(text=title)
-    headers = {"User-Agent": USER_AGENT}
+        scene_name = text_to_slug(text=title)
 
     for site in SITE_URLS:
+        url = f"{SITE_URLS[site]}/{scene_name}"
+        headers = {"User-Agent": USER_AGENT}
+        res = get_data(url=url, headers=headers, check_rc=False)
         try:
-            res = requests.get(f"{SITE_URLS[site]}/{scene_name}", headers=headers, timeout=(3, 5))
             res_json = fetch_page_json(page_html=res.text)
-            site_name = re.search(r"\.(.+)\.", res.url).group(1)
-            scene_name = res.url.split("/")[-1]
-        except (requests.exceptions.RequestException, AssertionError):
-            debug(f"Request status: {res.status_code}")
-            debug(f"Request reason: {res.reason}")
-            debug(f"Request url: {res.url}")
-            debug(f"Request headers: {res.request.headers}")
-            sys.exit(1)
+        except AttributeError:
+            continue
+        site_name = re.search(r"\.(.+)\.", res.url).group(1)
+        scene_name = res.url.split("/")[-1]
 
         if f"Video:{site_name}:{scene_name}" in res_json:
-            return res_json.get(f"Video:{site_name}:{scene_name}")
+            res_json = res_json.get(f"Video:{site_name}:{scene_name}")
+            res_json["site"] = site
+            return res_json
 
     debug("Scene not found")
     sys.exit(1)
 
 
-def scrape_scene(scene_json, url=None):
-    scene = {}
-    scene["title"] = scene_json.get("title")
-    scene["url"] = url or f"https:{scene_json.get('absoluteUrl')}"
-    scene["date"] = datetime.strptime(scene_json.get("releaseDate"), "%Y-%m-%dT%H:%M:%S.%fZ").strftime("%Y-%m-%d")
-    scene["studio"] = {"name": re.search(r"\.(.+)\.", scene.get("url")).group(1).title()}
-    scene["performers"] = [{"name": actor.get("name")} for actor in scene_json.get("models")]
-    scene["tags"] = [{"name": tag} for tag in scene_json.get("tags")]
-    scene["details"] = scene_json.get("description")
-    scene["image"] = scene_json.get("images").get("poster")[-1].get("src")
-
-    return scene
+def scrape_scene(raw_data, url=None):
+    scene = Scene()
+    scene.title = raw_data.get("title")
+    scene.url = url or f"{SITE_URLS[raw_data.get('site')]}/{raw_data.get('slug')}"
+    scene.date = datetime.strptime(raw_data.get("releaseDate"), "%Y-%m-%dT%H:%M:%S.%fZ").strftime("%Y-%m-%d")
+    scene.studio = {"name": re.search(r"\.(.+)\.", scene.url).group(1).capitalize()}
+    scene.performers = [{"name": actor.get("name")} for actor in raw_data.get("models")]
+    scene.tags = [{"name": tag.capitalize()} for tag in raw_data.get("tags")]
+    scene.details = raw_data.get("description")
+    scene.image = raw_data.get("images").get("poster")[-1].get("src")
+    return scene.json
 
 
 def main():
@@ -138,7 +99,7 @@ def main():
         debug("No param passed to script")
         sys.exit(1)
 
-    print(json.dumps(scraped_json))
+    print(scraped_json)
 
 
 if __name__ == "__main__":
