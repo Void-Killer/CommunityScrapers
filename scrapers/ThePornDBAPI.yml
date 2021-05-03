@@ -9,7 +9,7 @@ sceneByFragment:
 
 sceneByURL:
   - url:
-      - metadataapi
+      - metadataapi.com
     action: script
     script:
       - C:\python\python.exe
@@ -27,7 +27,7 @@ performerByName:
 
 performerByURL:
   - url:
-      - metadataapi
+      - metadataapi.com
     action: script
     script:
       - C:\python\python.exe

@@ -9,7 +9,7 @@ sceneByFragment:
 
 sceneByURL:
   - url:
-      - naughtyamerica
+      - naughtyamerica.com
     action: script
     script:
       - C:\python\python.exe

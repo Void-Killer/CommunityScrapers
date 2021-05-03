@@ -9,9 +9,9 @@ sceneByFragment:
 
 sceneByURL:
   - url:
-      - deeper
-      - tushy
-      - vixen
+      - deeper.com
+      - tushy.com
+      - vixen.com
     action: script
     script:
       - C:\python\python.exe

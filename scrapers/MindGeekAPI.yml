@@ -9,11 +9,11 @@ sceneByFragment:
 
 sceneByURL:
   - url:
-      - brazzers
-      - realitykings
-      - mofos
-      - babes
-      - digitalplayground
+      - brazzers.com
+      - realitykings.com
+      - mofos.com
+      - babes.com
+      - digitalplayground.com
     action: script
     script:
       - C:\python\python.exe
@@ -31,11 +31,11 @@ performerByName:
 
 performerByURL:
   - url:
-      - brazzers
-      - realitykings
-      - mofos
-      - babes
-      - digitalplayground
+      - brazzers.com
+      - realitykings.com
+      - mofos.com
+      - babes.com
+      - digitalplayground.com
     action: script
     script:
       - C:\python\python.exe
