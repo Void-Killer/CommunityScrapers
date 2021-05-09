@@ -1,11 +1,12 @@
 import json
+import re
 from datetime import datetime
 from urllib.parse import urlparse
 
 
 class Resource:
     def to_dict(self):
-        return {key.replace("_", ""): val for key, val in self.__dict__.items() if val}
+        return {re.search(r"_(.+)", key).group(1): val for key, val in self.__dict__.items() if val}
 
     @property
     def json(self):
@@ -48,9 +49,9 @@ class Resource:
         return val
 
     def validate_list_dict_val(self, val, attr_name=""):
-        if not isinstance(val, list):
+        if val and not isinstance(val, list):
             raise ValueError(f"{attr_name}: got {type(val).__name__} and not lst")
-        for elem in val:
+        for elem in val or []:
             self.validate_dict_val(elem, attr_name=attr_name)
         return val
 
@@ -392,3 +393,117 @@ class Scene(Resource):
     @image.setter
     def image(self, val):
         self._image = self.validate_url_val(val, attr_name="Image")
+
+
+class Movie(Resource):
+    """
+    Stash movie resource.
+
+    Args:
+        name (str)
+        aliases str
+        duration str
+        date (str): format should be YYYY-MM-DD
+        studio (dict): format {"name": studio_name (str)}
+        director (str)
+        url (str)
+        synopsis (str)
+        front_image (str)
+        back_image (str)
+    """
+
+    genders_vals = ("male", "female", "transgender_male", "transgender_female", "intersex", "non_binary")
+    fake_tits_vals = ("yes", "no")
+
+    def __init__(self):
+        super().__init__()
+        self._name = None
+        self._aliases = None
+        self._duration = None
+        self._date = None
+        self._studio = None
+        self._director = None
+        self._url = None
+        self._synopsis = None
+        self._front_image = None
+        self._back_image = None
+
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, val):
+        self._name = self.validate_str_val(val, attr_name="Name")
+
+    @property
+    def aliases(self):
+        return self._aliases
+
+    @aliases.setter
+    def aliases(self, val):
+        self._aliases = self.validate_str_val(val, attr_name="Aliases")
+
+    @property
+    def duration(self):
+        return self._duration
+
+    @duration.setter
+    def duration(self, val):
+        self._duration = self.validate_str_val(val, attr_name="Duration")
+
+    @property
+    def date(self):
+        return self._date
+
+    @date.setter
+    def date(self, val):
+        self._date = self.validate_date_val(val, attr_name="Date")
+
+    @property
+    def studio(self):
+        return self._studio
+
+    @studio.setter
+    def studio(self, val):
+        self._studio = self.validate_dict_val(val, attr_name="Studio")
+
+    @property
+    def director(self):
+        return self._director
+
+    @director.setter
+    def director(self, val):
+        self._director = self.validate_str_val(val, attr_name="Director")
+
+    @property
+    def url(self):
+        return self._url
+
+    @url.setter
+    def url(self, val):
+        self._url = self.validate_url_val(val, attr_name="URL")
+
+    @property
+    def synopsis(self):
+        return self._synopsis
+
+    @synopsis.setter
+    def synopsis(self, val):
+        self._synopsis = self.validate_str_val(val, attr_name="Synopsis")
+
+    @property
+    def front_image(self):
+        return self._front_image
+
+    @front_image.setter
+    def front_image(self, val):
+        self._front_image = self.validate_url_val(val, attr_name="FrontImage")
+
+    @property
+    def back_image(self):
+        return self._back_image
+
+    @back_image.setter
+    def back_image(self, val):
+        self._back_image = self.validate_url_val(val, attr_name="BackImage")

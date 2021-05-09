@@ -4,22 +4,22 @@ import sys
 from datetime import datetime
 from urllib.parse import urlparse
 
-import requests
+from slugify import slugify
 
 from utils.resource import Performer, Scene
-from utils.utilities import USER_AGENT, argument_handler, debug, get_data, text_to_slug
+from utils.utilities import argument_handler, debug, get_data
 
 SCENE_API_URL = "https://site-api.project1service.com/v2/releases"
 ACTOR_API_URL = "https://site-api.project1service.com/v1/actors"
 TOKENS_PATH = "utils\\tokens.json"
 SITE_URLS = {
-    "Brazzers": {"scene": "https://www.brazzers.com/video", "actor": "https://www.brazzers.com/pornstar"},
-    "Reality Kings": {"scene": "https://www.realitykings.com/scene", "actor": "https://www.realitykings.com/model"},
-    "Mofos": {"scene": "https://www.mofos.com/scene", "actor": "https://www.mofos.com/model"},
-    "Babes": {"scene": "https://www.babes.com/scene", "actor": "https://www.babes.com/model"},
-    "Digital Playground": {
-        "scene": "https://www.digitalplayground.com/scene",
-        "actor": "https://www.digitalplayground.com/modelprofile",
+    "brazzers": {"addr": "https://www.brazzers.com", "paths": {"scene": "video", "actor": "pornstar"}},
+    "realitykings": {"addr": "https://www.realitykings.com", "paths": {"scene": "scene", "actor": "model"}},
+    "mofos": {"addr": "https://www.mofos.com", "paths": {"scene": "scene", "actor": "model"}},
+    "babes": {"addr": "https://www.babes.com", "paths": {"scene": "scene", "actor": "model"}},
+    "digitalplayground": {
+        "addr": "https://www.digitalplayground.com",
+        "paths": {"scene": "scene", "actor": "modelprofile"},
     },
 }
 USA_BIRTHPLACES = (
@@ -35,11 +35,11 @@ USA_BIRTHPLACES = (
 
 def get_token(site):
     def generate_token():
-        res = requests.get(f"{site.scheme}://{site.netloc}", timeout=(3, 5))
+        res = get_data(f"{site.scheme}://{site.netloc}")
         token = res.cookies.get_dict().get("instance_token")
 
         tokens[site.netloc] = {"token": token, "date": datetime.today().strftime("%Y-%m-%d")}
-        with open(TOKENS_PATH, "w", encoding="utf-8") as f:
+        with open(TOKENS_PATH, "w+", encoding="utf-8") as f:
             json.dump(tokens, f, ensure_ascii=False, indent=4)
 
     tokens = {}
@@ -70,22 +70,30 @@ def scrape_scene_by_title(title):
 def get_scene_by_url(url):
     scene_id = re.search(r"/(\d+)/*", url).group(1)
     request_url = f"{SCENE_API_URL}/{scene_id}"
-    headers = {"Instance": get_token(site=urlparse(url)), "User-Agent": USER_AGENT}
-    return get_data(url=request_url, headers=headers).json().get("result")
+    headers = {"Instance": get_token(site=urlparse(url))}
+
+    try:
+        return get_data(url=request_url, headers=headers).json().get("result")
+    except Exception as err:
+        debug(err)
+        debug("Scene not found")
+        sys.exit(1)
 
 
 def get_scene_by_title(title):
     try:
-        scene_name = text_to_slug(text=re.search(r"\((.+?)\)\s\(\d*-", title).group(1))
+        scene_name = slugify(text=re.search(r"\((.+?)\)\s\(\d*-", title).group(1))
     except AttributeError:
-        scene_name = text_to_slug(text=title)
+        scene_name = slugify(text=title)
 
-    for site in SITE_URLS:
-        url = f"{SCENE_API_URL}?type=scene&limit=1&search={scene_name}"
-        headers = {"Instance": get_token(site=urlparse(SITE_URLS[site]["scene"])), "User-Agent": USER_AGENT}
-        res = get_data(url=url, headers=headers).json().get("result")[0]
-        if text_to_slug(text=res.get("title")) == scene_name:
-            res["site"] = site
+    for _, url in SITE_URLS.items():
+        request_url = f"{SCENE_API_URL}?type=scene&limit=1&search={scene_name}"
+        headers = {"Instance": get_token(site=urlparse(url["addr"]))}
+        try:
+            res = get_data(url=request_url, headers=headers).json().get("result")[0]
+        except Exception:
+            continue
+        if scene_name in slugify(text=res.get("title")):
             return res
 
     debug("Scene not found")
@@ -94,10 +102,11 @@ def get_scene_by_title(title):
 
 def scrape_scene(raw_data, url=None):
     def generate_url():
-        site = SITE_URLS[raw_data.get("site")]["scene"]
+        site = SITE_URLS[raw_data.get("brand")]["addr"]
+        path = SITE_URLS[raw_data.get("brand")]["paths"]["scene"]
         scene_id = raw_data.get("id")
-        scene_name = text_to_slug(text=raw_data.get("title"))
-        return f"{site}/{scene_id}/{scene_name}"
+        scene_name = slugify(text=raw_data.get("title"))
+        return f"{site}/{path}/{scene_id}/{scene_name}"
 
     scene = Scene()
     scene.title = raw_data.get("title")
@@ -124,20 +133,28 @@ def scrape_actor_by_name(name):
 def get_actor_by_url(url):
     actor_id = re.search(r"/(\d+)/*", url).group(1)
     request_url = f"{ACTOR_API_URL}/{actor_id}"
-    headers = {"Instance": get_token(site=urlparse(url)), "User-Agent": USER_AGENT}
-    return get_data(url=request_url, headers=headers).json().get("result")
+    headers = {"Instance": get_token(site=urlparse(url))}
+    try:
+        return get_data(url=request_url, headers=headers).json().get("result")
+    except Exception as err:
+        debug(err)
+        debug("Scene not found")
+        sys.exit(1)
 
 
 def get_actor_by_name(name):
-    actor_name = text_to_slug(text=name)
+    actor_name = slugify(text=name)
 
     actors = []
-    for site in SITE_URLS:
-        url = f"{ACTOR_API_URL}?limit=8&search={actor_name}"
-        headers = {"Instance": get_token(site=urlparse(SITE_URLS[site]["actor"])), "User-Agent": USER_AGENT}
-        res = get_data(url=url, headers=headers).json().get("result")
+    for site, url in SITE_URLS.items():
+        request_url = f"{ACTOR_API_URL}?limit=8&search={actor_name}"
+        headers = {"Instance": get_token(site=urlparse(url["addr"]))}
+        try:
+            res = get_data(url=request_url, headers=headers).json().get("result")
+        except Exception:
+            continue
         for match in res:
-            if actor_name in text_to_slug(text=match.get("name")):
+            if actor_name in slugify(text=match.get("name")):
                 if not [actor for actor in actors if match.get("id") == actor.get("id")]:
                     match["site"] = site
                     actors.append(match)
@@ -151,10 +168,11 @@ def get_actor_by_name(name):
 
 def scrape_actor(raw_data, url=None):
     def generate_url(actor):
-        site = SITE_URLS[actor.get("site")]["actor"]
+        site = SITE_URLS[actor["site"]]["addr"]
+        path = SITE_URLS[actor["site"]]["paths"]["actor"]
         actor_id = actor.get("id")
-        actor_name = text_to_slug(text=actor.get("name"))
-        return f"{site}/{actor_id}/{actor_name}"
+        actor_name = slugify(text=actor.get("name"))
+        return f"{site}/{path}/{actor_id}/{actor_name}"
 
     def country_replace(actor):
         country = actor.get("birthPlace").split(", ")[-1].replace("United Kingdom", "UK")

@@ -2,9 +2,9 @@ import json
 import re
 import sys
 from datetime import datetime
-
+from slugify import slugify
 from utils.resource import Scene
-from utils.utilities import USER_AGENT, argument_handler, debug, get_data, text_to_slug
+from utils.utilities import argument_handler, debug, get_data
 
 SITE_URLS = {
     "Tushy": "https://www.tushy.com/videos",
@@ -14,8 +14,7 @@ SITE_URLS = {
 
 
 def get_url_redirect(url):
-    headers = {"User-Agent": USER_AGENT}
-    return get_data(url=url, headers=headers).url
+    return get_data(url=url).url
 
 
 def fetch_page_json(page_html):
@@ -35,8 +34,7 @@ def scrape_scene_by_title(title):
 
 
 def get_scene_by_url(url):
-    headers = {"User-Agent": USER_AGENT}
-    res = get_data(url=url, headers=headers)
+    res = get_data(url=url)
     res_json = fetch_page_json(page_html=res.text)
     site_name = re.search(r"\.(.+)\.", res.url).group(1)
     scene_name = res.url.split("/")[-1]
@@ -50,14 +48,13 @@ def get_scene_by_url(url):
 
 def get_scene_by_title(title):
     try:
-        scene_name = text_to_slug(text=re.search(r"\((.+?)\)\s\(\d*-", title).group(1))
+        scene_name = slugify(text=re.search(r"\((.+?)\)\s\(\d*-", title).group(1))
     except AttributeError:
-        scene_name = text_to_slug(text=title)
+        scene_name = slugify(text=title)
 
     for site in SITE_URLS:
         url = f"{SITE_URLS[site]}/{scene_name}"
-        headers = {"User-Agent": USER_AGENT}
-        res = get_data(url=url, headers=headers, check_rc=False)
+        res = get_data(url=url, check_rc=False)
         try:
             res_json = fetch_page_json(page_html=res.text)
         except AttributeError:

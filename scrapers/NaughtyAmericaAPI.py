@@ -3,8 +3,10 @@ import re
 import sys
 from datetime import datetime
 
+from slugify import slugify
+
 from utils.resource import Scene
-from utils.utilities import USER_AGENT, argument_handler, debug, get_data, text_to_slug
+from utils.utilities import argument_handler, debug, get_data
 
 SCENE_API_URL = "https://i6p9q9r18e-dsn.algolia.net/1/indexes/nacms_combined_production"
 SCENE_IMAGE_URL = "https://images4.naughtycdn.com/cms/nacmscontent/v1/scenes"
@@ -31,18 +33,16 @@ def scrape_scene_by_title(title):
 def get_scene_by_url(url):
     scene_id = re.search(r"-(\d+)", url).group(1)
     request_url = f"{ALGOLIA_REQUEST_URL}&query={scene_id}"
-    headers = {"User-Agent": USER_AGENT}
-    return get_data(url=request_url, headers=headers).json().get("hits")[0]
+    return get_data(url=request_url).json().get("hits")[0]
 
 
 def get_scene_by_title(title):
     try:
-        scene_name = text_to_slug(text=re.search(r"\((.+?)\)\s\(\d*-", title).group(1))
+        scene_name = slugify(text=re.search(r"\((.+?)\)\s\(\d*-", title).group(1))
     except AttributeError:
-        scene_name = text_to_slug(text=title)
+        scene_name = slugify(text=title)
     url = f"{ALGOLIA_REQUEST_URL}&query={scene_name}"
-    headers = {"User-Agent": USER_AGENT}
-    res = get_data(url=url, headers=headers).json().get("hits")[0]
+    res = get_data(url=url).json().get("hits")[0]
 
     if scene_name in res.get("asset_slug"):
         return res

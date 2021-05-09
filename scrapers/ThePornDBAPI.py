@@ -2,8 +2,10 @@ import json
 import re
 import sys
 
+from slugify import slugify
+
 from utils.resource import Performer, Scene
-from utils.utilities import USER_AGENT, argument_handler, debug, get_data, text_to_slug
+from utils.utilities import argument_handler, debug, get_data
 
 SCENE_API_URL = "https://metadataapi.net/api/scenes"
 ACTOR_API_URL = "https://metadataapi.net/api/performers"
@@ -24,20 +26,20 @@ def scrape_scene_by_title(title):
 def get_scene_by_url(url):
     scene_name = url.split("/")[-1]
     request_url = f"{SCENE_API_URL}/{scene_name}"
-    headers = {"User-Agent": USER_AGENT, "Authorization": f"Bearer {API_KEY}"}
+    headers = {"Authorization": f"Bearer {API_KEY}"}
     return get_data(url=request_url, headers=headers).json().get("data")
 
 
 def get_scene_by_title(title):
     try:
         parsed_site = re.search(r"\[(.*?)\]", title).group(1)
-        site_name = text_to_slug(text=" ".join(re.findall("([A-Z][^A-Z]*)", parsed_site)))
-        scene_name = text_to_slug(text=re.search(r"\((.+?)\)\s\(\d*-", title).group(1))
+        site_name = slugify(text=" ".join(re.findall("([A-Z][^A-Z]*)", parsed_site)))
+        scene_name = slugify(text=re.search(r"\((.+?)\)\s\(\d*-", title).group(1))
         search_name = f"{site_name}-{scene_name}"
     except AttributeError:
-        search_name = text_to_slug(text=title)
+        search_name = slugify(text=title)
     url = f"{SCENE_API_URL}?parse={search_name}&limit=1"
-    headers = {"User-Agent": USER_AGENT, "Authorization": f"Bearer {API_KEY}"}
+    headers = {"Authorization": f"Bearer {API_KEY}"}
     res = get_data(url=url, headers=headers).json().get("data")[0]
 
     if search_name in res.get("slug"):
@@ -73,15 +75,15 @@ def scrape_actor_by_name(name):
 def get_actor_by_url(url):
     actor_name = url.split("/")[-1]
     request_url = f"{ACTOR_API_URL}/{actor_name}"
-    headers = {"User-Agent": USER_AGENT, "Authorization": f"Bearer {API_KEY}"}
+    headers = {"Authorization": f"Bearer {API_KEY}"}
     return get_data(url=request_url, headers=headers).json().get("data")
 
 
 def get_actor_by_name(name):
     actors = []
-    actor_name = text_to_slug(text=name)
+    actor_name = slugify(text=name)
     url = f"{ACTOR_API_URL}?q={actor_name}"
-    headers = {"User-Agent": USER_AGENT, "Authorization": f"Bearer {API_KEY}"}
+    headers = {"Authorization": f"Bearer {API_KEY}"}
     res = get_data(url=url, headers=headers).json().get("data")
 
     for match in res:
