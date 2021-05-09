@@ -1,0 +1,53 @@
+name: "Adult Time"
+
+sceneByFragment:
+    action: script
+    script:
+      - C:\python\python.exe
+      - AdultTimeAPI.py
+      - --scene_frag
+
+sceneByURL:
+  - url:
+      - 21sextury.com
+      - 21sextreme.com
+      - burningangel.com
+      - evilangel.com
+      - roccosiffredi.com
+      - fantasymassage.com
+    action: script
+    script:
+      - C:\python\python.exe
+      - AdultTimeAPI.py
+      - --scene_url
+
+performerByName:
+    action: script
+    script:
+      - C:\python\python.exe
+      - AdultTimeAPI.py
+      - --actor_frag
+
+performerByURL:
+  - url:
+      - 21sextury.com
+      - 21sextreme.com
+      - burningangel.com
+      - evilangel.com
+      - roccosiffredi.com
+      - fantasymassage.com
+    action: script
+    script:
+      - C:\python\python.exe
+      - AdultTimeAPI.py
+      - --actor_url
+
+movieByURL:
+  - url:
+      - evilangel.com
+      - roccosiffredi.com
+    action: script
+    script:
+      - C:\python\python.exe
+      - AdultTimeAPI.py
+      - --movie_url
