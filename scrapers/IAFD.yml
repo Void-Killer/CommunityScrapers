@@ -1,31 +1,33 @@
 name: IAFD
+
+sceneByFragment:
+    action: script
+    script:
+      - C:\python\python.exe
+      - IAFD.py
+      - --scene_frag
+
+sceneByURL:
+  - url:
+      - iafd.com
+    action: script
+    script:
+      - C:\python\python.exe
+      - IAFD.py
+      - --scene_url
+
 performerByName:
     action: script
     script:
-      - python3
+      - C:\python\python.exe
       - IAFD.py
-      - query
+      - --actor_frag
+
 performerByURL:
   - url:
-     - iafd.com
+      - iafd.com
     action: script
     script:
-      - python3
+      - C:\python\python.exe
       - IAFD.py
-sceneByURL:
-  - url:
-      - iafd.com/title.rme
-    action: script
-    script:
-      - python3
-      - IAFD.py
-      - scene
-movieByURL:
-  - url:
-      - iafd.com/title.rme/title=
-    action: script
-    script:
-      - python3
-      - IAFD.py
-      - movie
-#Last Updated May 8, 2021
+      - --actor_url

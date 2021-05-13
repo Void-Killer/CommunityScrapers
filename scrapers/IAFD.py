@@ -1,609 +1,220 @@
 import base64
-import datetime
 import json
-import string
-import sys
 import re
-from urllib.parse import urlparse
-# extra modules below need to be installed
-import cloudscraper
-from lxml import html
+import sys
+from datetime import datetime
 
-class Scraper:
-    def set_value(self,value):
-        if value:
-            if not re.match(r'(?i)no data', value[0]):
-                    return value[0]
-        return None
+from slugify import slugify
 
-    def set_stripped_value(self,value):
-        if value:
-            return value[0].strip("\n ")
-        return None
+from utils.resource import Performer, Scene
+from utils.utilities import argument_handler, debug, get_data, xpath_html
 
-    def set_concat_value(self,sep,values):
-        if values:
-            return sep.join(values)
-        return None
+SEARCH_URL = "https://www.iafd.com/results.asp?searchtype=comprehensive&searchstring="
+SITE_URL = "https://www.iafd.com"
+SCENE_URL = "https://www.iafd.com/title.rme/title="
+GENDER_MAP = {"f": "Female", "m": "Male"}
+XPATHS = {
+    "name": "//h1/text()",
+    "scene_search": "//a[@class='pop-execute']",
+    "scene_date": "//p[text()='Release Date']/following-sibling::p[1]/text()",
+    "studio": "//p[text()='Studio']/following-sibling::p//text()",
+    "performers": "//div[@class='castbox']/p/a/text()",
+    "details": "//div[@id='synopsis']/div[@class='padded-panel']//text()",
+    "actor_search": "//a[contains(@href,'person.rme')]",
+    "aliases": "//div[p[text()='\nPerformer\nAKA']]//div[@class='biodata']/text()",
+    "gender": "//input[@name='Gender']/@value",
+    "bithdate": "//p[text()='Birthday']/following-sibling::p/a/text()",
+    "death_date": "//p[text()='Date of Death']/following-sibling::p/text()",
+    "country": "//p[text()='Birthplace']/following-sibling::p/text()",
+    "ethnicity": "//p[text()='Ethnicity']/following-sibling::p/text()",
+    "hair_color": "//p[text()='Hair Colors']/following-sibling::p/text()",
+    "height": "//p[text()='Height']/following-sibling::p/text()",
+    "weight": "//p[text()='Weight']/following-sibling::p/text()",
+    "measurements": "//p[text()='Measurements']/following-sibling::p/text()",
+    "tatoos": "//p[text()='Tattoos']/following-sibling::p/text()",
+    "piercings": "//p[text()='Piercings']/following-sibling::p/text()",
+    "career_length": "//p[text()='Years Active']/following-sibling::p/text()",
+    "actor_url": "//*[contains(@href,'person.rme')]/@href",
+    "twitter": "//p[text()='Website']/following-sibling::p/a/@href",
+    "instagram": "//p[@class='biodata']/a[contains(text(),'instagram')]/@href",
+    "actor_image": "//div[@id='headshot']/img",
+}
 
-    def set_named_value(self, name, value):
-        if value:
-            attr = { name: value[0] }
-            return attr
-        return None
 
-    def set_named_values(self, name, values):
-        res = []
-        for v in values:
-            r = { name: v }
-            res.append(r)
-        return res
+def scrape_scene_by_url(url):
+    raw_data = get_scene_by_url(url=url)
+    return scrape_scene(raw_data=raw_data, url=url)
 
-    def print(self):
-        for a in dir(self):
-            if not a.startswith('__') and not callable(getattr(self, a)) :
-                if vars(self)[a]:
-                    print("%s: %s" % (a , vars(self)[a] ) )
 
-    def to_json(self):
-        for a in dir(self):
-            if not a.startswith('__') and not callable(getattr(self, a)) :
-                if not vars(self)[a]:
-                    del vars(self)[a]
-        return json.dumps(self.__dict__)
+def scrape_scene_by_title(title):
+    raw_data = get_scene_by_title(title=title)
+    return scrape_scene(raw_data=raw_data)
 
-    def map_ethnicity(self, value):
-        ethnicity = {
-             'Asian': 'asian',
-             'Caucasian': 'white',
-             'Black': 'black',
-             'Latin': 'hispanic',
-        }
-        return ethnicity.get(value, value)
 
-    def map_gender(self, value):
-        gender = {
-             'f': 'Female',
-             'm': 'Male',
-        }
-        return gender.get(value, value)
+def get_scene_by_url(url):
+    try:
+        return get_data(url=url).text
+    except Exception as err:
+        debug(err)
+        debug("Scene not found")
+        sys.exit(1)
 
-    def map_country(self, value):
-        country = {
-              # https://en.wikipedia.org/wiki/List_of_adjectival_and_demonymic_forms_for_countries_and_nations
-              "Abkhaz": "Abkhazia",
-              "Abkhazian": "Abkhazia",
-              "Afghan": "Afghanistan",
-              "Albanian": "Albania",
-              "Algerian": "Algeria",
-              "American Samoan": "American Samoa",
-              "American": "United States of America",
-              "Andorran": "Andorra",
-              "Angolan": "Angola",
-              "Anguillan": "Anguilla",
-              "Antarctic": "Antarctica",
-              "Antiguan": "Antigua and Barbuda",
-              "Argentine": "Argentina",
-              "Argentinian": "Argentina",
-              "Armenian": "Armenia",
-              "Aruban": "Aruba",
-              "Australian": "Australia",
-              "Austrian": "Austria",
-              "Azerbaijani": "Azerbaijan",
-              "Azeri": "Azerbaijan",
-              "Bahamian": "Bahamas",
-              "Bahraini": "Bahrain",
-              "Bangladeshi": "Bangladesh",
-              "Barbadian": "Barbados",
-              "Barbudan": "Antigua and Barbuda",
-              "Basotho": "Lesotho",
-              "Belarusian": "Belarus",
-              "Belgian": "Belgium",
-              "Belizean": "Belize",
-              "Beninese": "Benin",
-              "Beninois": "Benin",
-              "Bermudan": "Bermuda",
-              "Bermudian": "Bermuda",
-              "Bhutanese": "Bhutan",
-              "BIOT": "British Indian Ocean Territory",
-              "Bissau-Guinean": "Guinea-Bissau",
-              "Bolivian": "Bolivia",
-              "Bonaire": "Bonaire",
-              "Bonairean": "Bonaire",
-              "Bosnian": "Bosnia and Herzegovina",
-              "Botswanan": "Botswana",
-              "Bouvet Island": "Bouvet Island",
-              "Brazilian": "Brazil",
-              "British Virgin Island": "Virgin Islands, British",
-              "British": "United Kingdom",
-              "Bruneian": "Brunei",
-              "Bulgarian": "Bulgaria",
-              "Burkinabé": "Burkina Faso",
-              "Burmese": "Burma",
-              "Burundian": "Burundi",
-              "Cabo Verdean": "Cabo Verde",
-              "Cambodian": "Cambodia",
-              "Cameroonian": "Cameroon",
-              "Canadian": "Canada",
-              "Cantonese": "Hong Kong",
-              "Caymanian": "Cayman Islands",
-              "Central African": "Central African Republic",
-              "Chadian": "Chad",
-              "Channel Island": "Guernsey",
-              #Channel Island: "Jersey"
-              "Chilean": "Chile",
-              "Chinese": "China",
-              "Christmas Island": "Christmas Island",
-              "Cocos Island": "Cocos (Keeling) Islands",
-              "Colombian": "Colombia",
-              "Comoran": "Comoros",
-              "Comorian": "Comoros",
-              "Congolese": "Congo",
-              "Cook Island": "Cook Islands",
-              "Costa Rican": "Costa Rica",
-              "Croatian": "Croatia",
-              "Cuban": "Cuba",
-              "Curaçaoan": "Curaçao",
-              "Cypriot": "Cyprus",
-              "Czech": "Czech Republic",
-              "Danish": "Denmark",
-              "Djiboutian": "Djibouti",
-              "Dominican": "Dominica",
-              "Dutch": "Netherlands",
-              "Ecuadorian": "Ecuador",
-              "Egyptian": "Egypt",
-              "Emirati": "United Arab Emirates",
-              "Emiri": "United Arab Emirates",
-              "Emirian": "United Arab Emirates",
-              "English people": "England",
-              "English": "England",
-              "Equatoguinean": "Equatorial Guinea",
-              "Equatorial Guinean": "Equatorial Guinea",
-              "Eritrean": "Eritrea",
-              "Estonian": "Estonia",
-              "Ethiopian": "Ethiopia",
-              "European": "European Union",
-              "Falkland Island": "Falkland Islands",
-              "Faroese": "Faroe Islands",
-              "Fijian": "Fiji",
-              "Filipino": "Philippines",
-              "Finnish": "Finland",
-              "Formosan": "Taiwan",
-              "French Guianese": "French Guiana",
-              "French Polynesian": "French Polynesia",
-              "French Southern Territories": "French Southern Territories",
-              "French": "France",
-              "Futunan": "Wallis and Futuna",
-              "Gabonese": "Gabon",
-              "Gambian": "Gambia",
-              "Georgian": "Georgia",
-              "German": "Germany",
-              "Ghanaian": "Ghana",
-              "Gibraltar": "Gibraltar",
-              "Greek": "Greece",
-              "Greenlandic": "Greenland",
-              "Grenadian": "Grenada",
-              "Guadeloupe": "Guadeloupe",
-              "Guamanian": "Guam",
-              "Guatemalan": "Guatemala",
-              "Guinean": "Guinea",
-              "Guyanese": "Guyana",
-              "Haitian": "Haiti",
-              "Heard Island": "Heard Island and McDonald Islands",
-              "Hellenic": "Greece",
-              "Herzegovinian": "Bosnia and Herzegovina",
-              "Honduran": "Honduras",
-              "Hong Kong": "Hong Kong",
-              "Hong Konger": "Hong Kong",
-              "Hungarian": "Hungary",
-              "Icelandic": "Iceland",
-              "Indian": "India",
-              "Indonesian": "Indonesia",
-              "Iranian": "Iran",
-              "Iraqi": "Iraq",
-              "Irish": "Ireland",
-              "Israeli": "Israel",
-              "Israelite": "Israel",
-              "Italian": "Italy",
-              "Ivorian": "Ivory Coast",
-              "Jamaican": "Jamaica",
-              "Jan Mayen": "Jan Mayen",
-              "Japanese": "Japan",
-              "Jordanian": "Jordan",
-              "Kazakh": "Kazakhstan",
-              "Kazakhstani": "Kazakhstan",
-              "Kenyan": "Kenya",
-              "Kirghiz": "Kyrgyzstan",
-              "Kirgiz": "Kyrgyzstan",
-              "Kiribati": "Kiribati",
-              "Korean": "South Korea",
-              "Kosovan": "Kosovo",
-              "Kosovar": "Kosovo",
-              "Kuwaiti": "Kuwait",
-              "Kyrgyz": "Kyrgyzstan",
-              "Kyrgyzstani": "Kyrgyzstan",
-              "Lao": "Lao People's Democratic Republic",
-              "Laotian": "Lao People's Democratic Republic",
-              "Latvian": "Latvia",
-              "Lebanese": "Lebanon",
-              "Lettish": "Latvia",
-              "Liberian": "Liberia",
-              "Libyan": "Libya",
-              "Liechtensteiner": "Liechtenstein",
-              "Lithuanian": "Lithuania",
-              "Luxembourg": "Luxembourg",
-              "Luxembourgish": "Luxembourg",
-              "Macanese": "Macau",
-              "Macedonian": "North Macedonia",
-              "Magyar": "Hungary",
-              "Mahoran": "Mayotte",
-              "Malagasy": "Madagascar",
-              "Malawian": "Malawi",
-              "Malaysian": "Malaysia",
-              "Maldivian": "Maldives",
-              "Malian": "Mali",
-              "Malinese": "Mali",
-              "Maltese": "Malta",
-              "Manx": "Isle of Man",
-              "Marshallese": "Marshall Islands",
-              "Martinican": "Martinique",
-              "Martiniquais": "Martinique",
-              "Mauritanian": "Mauritania",
-              "Mauritian": "Mauritius",
-              "McDonald Islands": "Heard Island and McDonald Islands",
-              "Mexican": "Mexico",
-              "Moldovan": "Moldova",
-              "Monacan": "Monaco",
-              "Mongolian": "Mongolia",
-              "Montenegrin": "Montenegro",
-              "Montserratian": "Montserrat",
-              "Monégasque": "Monaco",
-              "Moroccan": "Morocco",
-              "Motswana": "Botswana",
-              "Mozambican": "Mozambique",
-              "Myanma": "Myanmar",
-              "Namibian": "Namibia",
-              "Nauruan": "Nauru",
-              "Nepalese": "Nepal",
-              "Nepali": "Nepal",
-              "Netherlandic": "Netherlands",
-              "New Caledonian": "New Caledonia",
-              "New Zealand": "New Zealand",
-              "Ni-Vanuatu": "Vanuatu",
-              "Nicaraguan": "Nicaragua",
-              "Nigerian": "Nigeria",
-              "Nigerien": "Niger",
-              "Niuean": "Niue",
-              "Norfolk Island": "Norfolk Island",
-              "Northern Irish": "Northern Ireland",
-              "Northern Marianan": "Northern Mariana Islands",
-              "Norwegian": "Norway",
-              "Omani": "Oman",
-              "Pakistani": "Pakistan",
-              "Palauan": "Palau",
-              "Palestinian": "Palestine",
-              "Panamanian": "Panama",
-              "Papua New Guinean": "Papua New Guinea",
-              "Papuan": "Papua New Guinea",
-              "Paraguayan": "Paraguay",
-              "Persian": "Iran",
-              "Peruvian": "Peru",
-              "Philippine": "Philippines",
-              "Pitcairn Island": "Pitcairn Islands",
-              "Polish": "Poland",
-              "Portuguese": "Portugal",
-              "Puerto Rican": "Puerto Rico",
-              "Qatari": "Qatar",
-              "Romanian": "Romania",
-              "Russian": "Russia",
-              "Rwandan": "Rwanda",
-              "Saba": "Saba",
-              "Saban": "Saba",
-              "Sahraouian": "Western Sahara",
-              "Sahrawi": "Western Sahara",
-              "Sahrawian": "Western Sahara",
-              "Salvadoran": "El Salvador",
-              "Sammarinese": "San Marino",
-              "Samoan": "Samoa",
-              "Saudi Arabian": "Saudi Arabia",
-              "Saudi": "Saudi Arabia",
-              "Scottish": "Scotland",
-              "Senegalese": "Senegal",
-              "Serbian": "Serbia",
-              "Seychellois": "Seychelles",
-              "Sierra Leonean": "Sierra Leone",
-              "Singapore": "Singapore",
-              "Singaporean": "Singapore",
-              "Slovak": "Slovakia",
-              "Slovene": "Slovenia",
-              "Slovenian": "Slovenia",
-              "Solomon Island": "Solomon Islands",
-              "Somali": "Somalia",
-              "Somalilander": "Somaliland",
-              "South African": "South Africa",
-              "South Georgia Island": "South Georgia and the South Sandwich Islands",
-              "South Ossetian": "South Ossetia",
-              "South Sandwich Island": "South Georgia and the South Sandwich Islands",
-              "South Sudanese": "South Sudan",
-              "Spanish": "Spain",
-              "Sri Lankan": "Sri Lanka",
-              "Sudanese": "Sudan",
-              "Surinamese": "Suriname",
-              "Svalbard resident": "Svalbard",
-              "Swati": "Eswatini",
-              "Swazi": "Eswatini",
-              "Swedish": "Sweden",
-              "Swiss": "Switzerland",
-              "Syrian": "Syrian Arab Republic",
-              "Taiwanese": "Taiwan",
-              "Tajikistani": "Tajikistan",
-              "Tanzanian": "Tanzania",
-              "Thai": "Thailand",
-              "Timorese": "Timor-Leste",
-              "Tobagonian": "Trinidad and Tobago",
-              "Togolese": "Togo",
-              "Tokelauan": "Tokelau",
-              "Tongan": "Tonga",
-              "Trinidadian": "Trinidad and Tobago",
-              "Tunisian": "Tunisia",
-              "Turkish": "Turkey",
-              "Turkmen": "Turkmenistan",
-              "Turks and Caicos Island": "Turks and Caicos Islands",
-              "Tuvaluan": "Tuvalu",
-              "Ugandan": "Uganda",
-              "Ukrainian": "Ukraine",
-              "Uruguayan": "Uruguay",
-              "Uzbek": "Uzbekistan",
-              "Uzbekistani": "Uzbekistan",
-              "Vanuatuan": "Vanuatu",
-              "Vatican": "Vatican City State",
-              "Venezuelan": "Venezuela",
-              "Vietnamese": "Vietnam",
-              "Wallis and Futuna": "Wallis and Futuna",
-              "Wallisian": "Wallis and Futuna",
-              "Welsh": "Wales",
-              "Yemeni": "Yemen",
-              "Zambian": "Zambia",
-              "Zimbabwean": "Zimbabwe",
-              "Åland Island": "Åland Islands",
-        }
-        return country.get(value,value)
 
-stash_date = '%Y-%m-%d'
-iafd_date = '%B %d, %Y'
-iafd_date_scene = '%b %d, %Y'
+def get_scene_by_title(title):
+    try:
+        scene_name = re.search(r"\((.+?)\)\s\(\d*-", title).group(1).lower()
+    except AttributeError:
+        scene_name = title.lower()
 
-def log(*s):
-    print(*s, file=sys.stderr)
+    try:
+        html = get_data(url=f"{SEARCH_URL}{scene_name}").text
+        matches = xpath_html(html, xpath=XPATHS["scene_search"], get_first=False)
+        for match in matches:
+            if scene_name in match.text.lower():
+                return get_data(url=f"{SITE_URL}{match.values()[1]}").text
+    except Exception:
+        pass
+
+    debug("Scene not found")
     sys.exit(1)
 
-def debug_print(*s):
-    print(*s, file=sys.stderr)
 
-def strip_end(text, suffix):
-    if suffix and text.endswith(suffix):
-        return text[:-len(suffix)]
-    return text
+def scrape_scene(raw_data, url=None):
+    def generate_url():
+        year = scene.date.split("-")[0]
+        return f"{SCENE_URL}{slugify(scene.title, separator='+')}/year={year}/{slugify(scene.title)}"
 
-def performer_query(query):
-    tree = scrape(f"https://www.iafd.com/results.asp?searchtype=comprehensive&searchstring={query}")
-    performer_names = tree.xpath('//table[@id="tblFem" or @id="tblMal"]//td[a[img]]/following-sibling::td[1]/a/text()')
-    performer_urls = tree.xpath('//table[@id="tblFem" or @id="tblMal"]//td[a[img]]/following-sibling::td[1]/a/@href')
-    performers = []
-    for i, name in enumerate(performer_names):
-        p = {
-            'Name': name,
-            'URL': "https://www.iafd.com/" + performer_urls[i],
-        }
-        performers.append(p)
-    print(json.dumps(performers))
-    if not performers:
-        log("<no performers> found")
-    sys.exit(0)
- 
+    scene = Scene()
+    scene.title = re.sub(r"\(\d*\)", "", xpath_html(html=raw_data, xpath=XPATHS["name"])).strip()
+    scene.date = datetime.strptime(
+        xpath_html(html=raw_data, xpath=XPATHS["scene_date"]).strip(),
+        "%b %d, %Y",
+    ).strftime("%Y-%m-%d")
+    scene.studio = {"name": xpath_html(html=raw_data, xpath=XPATHS["studio"])}
+    scene.performers = [
+        {"name": actor} for actor in xpath_html(html=raw_data, xpath=XPATHS["performers"], get_first=False)
+    ]
+    scene.details = xpath_html(html=raw_data, xpath=XPATHS["details"])
+    scene.url = url or generate_url()
+    return scene.json
 
-def scrape(url):
-    scraper = cloudscraper.create_scraper()
+
+def scrape_actor_by_url(url):
+    raw_data = get_actor_by_url(url=url)
+    return scrape_actor(raw_data=raw_data, url=url)
+
+
+def scrape_actor_by_name(name):
+    raw_data = get_actor_by_name(name=name)
+    return scrape_actor(raw_data=raw_data)
+
+
+def get_actor_by_url(url):
     try:
-        scraped = scraper.get(url, timeout=(3,7))
-    except Exception as e:
-        log("scrape error %s" % e)
-    if scraped.status_code >= 400:
-        log('HTTP Error: %s' % scraped.status_code)
-    return html.fromstring(scraped.content)
+        return get_data(url=url).text
+    except Exception as err:
+        debug(err)
+        debug("Performer not found")
+        sys.exit(1)
 
-def scrape_image(url):
-    scraper = cloudscraper.create_scraper()
+
+def get_actor_by_name(name):
+    actors = []
     try:
-        scraped = scraper.get(url, timeout=(3,7))
-    except Exception as e:
-        debug_print("scrape error %s" %e )
-        return None
-    if scraped.status_code >= 400:
-        debug_print('HTTP Error: %s' % scraped.status_code)
-        return None
-    b64img = base64.b64encode(scraped.content)
-    return "data:image/jpeg;base64," + b64img.decode('utf-8')
+        html = get_data(url=f"{SEARCH_URL}{name}").text
+        matches = xpath_html(html, xpath=XPATHS["actor_search"], get_first=False)
+        for match in matches:
+            if match.text and name in match.text:
+                actors.append(get_data(url=f"{SITE_URL}{match.values()[0]}").text)
+    except Exception as err:
+        debug(err)
+        debug("Performer not found")
+        sys.exit(1)
 
-def performer_from_tree(tree):
-    p = Scraper()
+    if actors:
+        return actors
 
-    performer_name = tree.xpath("//h1/text()")
-    p.name = p.set_stripped_value(performer_name)
+    debug("Performer not found")
+    sys.exit(1)
 
-    performer_gender = tree.xpath('//form[@id="correct"]/input[@name="Gender"]/@value')
-    p.gender = p.set_value(performer_gender)
-    p.gender = p.map_gender(p.gender)
 
-    performer_url = tree.xpath('//*[contains(@href,"person.rme")]/@href')
-    if performer_url:
-        p.url = "https://www.iafd.com" + performer_url[0]
-    performer_twitter = tree.xpath('//p[@class="biodata"]/a[contains(text(),"http://twitter.com/")]/@href')
-    p.twitter = p.set_value(performer_twitter)
-
-    performer_instagram = tree.xpath('//p[@class="biodata"]/a[contains(text(),"http://instagram.com/")]/@href')
-    p.instagram = p.set_value(performer_instagram)
-
-    performer_birthdate = tree.xpath('(//p[@class="bioheading"][text()="Birthday"]/following-sibling::p)[1]//text()')
-    p.birthdate = p.set_value(performer_birthdate)
-    if p.birthdate:
-        p.birthdate = re.sub(r'(\S+\s+\d+,\s+\d+).*', r'\1', p.birthdate)
+def scrape_actor(raw_data, url=None):
+    def parse_date(date_type):
         try:
-            p.birthdate = datetime.datetime.strptime(p.birthdate, iafd_date).strftime(stash_date)
-        except:
+            xpath = XPATHS["bithdate"] if date_type == "birth" else XPATHS["death_date"]
+            return datetime.strptime(
+                re.search(r"(\S+\s+\d+,\s+\d+)", xpath_html(html=raw_data, xpath=xpath)).group(1), "%B %d, %Y"
+            ).strftime("%Y-%m-%d")
+        except Exception:
+            return
+
+    def image_decode():
+        image = get_data(url=xpath_html(html=raw_data, xpath=XPATHS["actor_image"]).values()[-1]).content
+        return f"data:image/jpeg;base64,{base64.b64encode(image).decode('utf-8')}"
+
+    if type(raw_data) is list:
+        actors = []
+        for performer in raw_data:
+            actor = Performer()
+            actor.name = xpath_html(html=performer, xpath=XPATHS["name"]).strip()
+            actor.url = f"{SITE_URL}{xpath_html(html=performer, xpath=XPATHS['actor_url'])}"
+            actors.append(actor.to_dict())
+        return json.dumps(actors)
+    else:
+        actor = Performer()
+        actor.name = xpath_html(html=raw_data, xpath=XPATHS["name"]).strip()
+        actor.aliases = xpath_html(html=raw_data, xpath=XPATHS["aliases"])
+        actor.gender = GENDER_MAP[xpath_html(html=raw_data, xpath=XPATHS["gender"])]
+        actor.birthdate = parse_date(date_type="birth")
+        actor.death_date = parse_date(date_type="death")
+        try:
+            actor.country = xpath_html(html=raw_data, xpath=XPATHS["country"]).split(",")[-1].strip()
+        except Exception:
             pass
-
-    performer_deathdate = tree.xpath('(//p[@class="bioheading"][text()="Date of Death"]/following-sibling::p)[1]//text()')
-    p.death_date = p.set_value(performer_deathdate)
-    if p.death_date:
-        p.death_date = re.sub(r'(\S+\s+\d+,\s+\d+).*', r'\1', p.death_date)
+        actor.ethnicity = xpath_html(html=raw_data, xpath=XPATHS["ethnicity"])
+        actor.hair_color = xpath_html(html=raw_data, xpath=XPATHS["hair_color"])
         try:
-            p.death_date = datetime.datetime.strptime(p.death_date, iafd_date).strftime(stash_date)
-        except:
+            actor.height = re.search(r"\((\d*) cm\)", xpath_html(html=raw_data, xpath=XPATHS["height"])).group(1)
+        except Exception:
             pass
-
-    performer_ethnicity = tree.xpath('//div[p[text()="Ethnicity"]]/p[@class="biodata"][1]//text()')
-    p.ethnicity = p.set_value(performer_ethnicity)
-    p.ethnicity = p.map_ethnicity(p.ethnicity)
-
-    performer_country = tree.xpath('//div/p[text()="Nationality"]/following-sibling::p[1]//text()')
-    p.country = p.set_value(performer_country)
-    if p.country:
-        p.country = re.sub(r'^American,.+','American',p.country)
-        p.country = p.map_country(p.country)
-
-    performer_height = tree.xpath('//div/p[text()="Height"]/following-sibling::p[1]//text()')
-    p.height = p.set_value(performer_height)
-    if p.height:
-        p.height = re.sub(r'.*\((\d+)\s+cm.*', r'\1', p.height)
-
-    performer_weight = tree.xpath('//div/p[text()="Weight"]/following-sibling::p[1]//text()')
-    p.weight = p.set_value(performer_weight)
-    if p.weight:
-        p.weight = re.sub(r'.*\((\d+)\s+kg.*', r'\1', p.weight)
-
-    performer_haircolor = tree.xpath('//div/p[starts-with(.,"Hair Color")]/following-sibling::p[1]//text()')
-    p.hair_color = p.set_value(performer_haircolor)
-
-    performer_measurements = tree.xpath('//div/p[text()="Measurements"]/following-sibling::p[1]//text()')
-    p.measurements = p.set_value(performer_measurements)
-
-    performer_careerlength = tree.xpath('//div/p[@class="biodata"][contains(text(),"Started around")]/text()')
-    p.career_length = p.set_value(performer_careerlength)
-    if p.career_length:
-        p.career_length = re.sub(r'(\D+\d\d\D+)$', "", p.career_length)
-
-    performer_aliases = tree.xpath('//div[p[@class="bioheading" and contains(normalize-space(text()),"Performer AKA")]]//div[@class="biodata" and not(text()="No known aliases")]/text()')
-    p.aliases = p.set_value(performer_aliases)
-
-    performer_tattoos = tree.xpath('//div/p[text()="Tattoos"]/following-sibling::p[1]//text()')
-    p.tattoos = p.set_value(performer_tattoos)
-
-    performer_piercings = tree.xpath('//div/p[text()="Piercings"]/following-sibling::p[1]//text()')
-    p.piercings = p.set_value(performer_piercings)
-
-    performer_image_url = tree.xpath('//div[@id="headshot"]/img/@src')
-    if performer_image_url:
         try:
-            debug_print("downloading image from %s" % performer_image_url[0] )
-            p.image = scrape_image(performer_image_url[0])
-        except Exception as e:
-            debug_print("error downloading image %s" %e)
-
-    res = p.to_json()
-    #debug_print(res)
-    print(res)
-    sys.exit(0)
-
-def scene_from_tree(tree):
-    s = Scraper()
-
-    scene_title = tree.xpath('//h1/text()')
-    s.title = s.set_stripped_value(scene_title)
-
-    scene_date =  tree.xpath('//div[@class="col-xs-12 col-sm-3"]//p[text() = "Release Date"]/following-sibling::p[1]//text()')
-    s.date = s.set_stripped_value(scene_date)
-    if s.date:
-        try:
-            s.date = datetime.datetime.strptime(s.date, iafd_date_scene).strftime(stash_date)
-        except:
+            actor.weight = re.search(r"\((\d*) kg\)", xpath_html(html=raw_data, xpath=XPATHS["weight"])).group(1)
+        except Exception:
             pass
-
-    scene_details = tree.xpath('//div[@id="synopsis"]/div[@class="padded-panel"]//text()')
-    s.details = s.set_value(scene_details)
-
-    scene_studio = tree.xpath('//div[@class="col-xs-12 col-sm-3"]//p[text() = "Studio"]/following-sibling::p[1]//text()')
-    s.studio = s.set_named_value("name",scene_studio)
-
-    scene_performers = tree.xpath('//div[@class="castbox"]/p/a/text()')
-    s.performers = s.set_named_values("name", scene_performers)
-
-    res = s.to_json()
-    print(res)
-    sys.exit(0)
-
-def movie_from_tree(tree):
-    m = Scraper()
-    movie_name = tree.xpath("//h1/text()")
-    m.name = m.set_stripped_value(movie_name)
-    if m.name:
-        m.name = re.sub(r'\s*\([0-9]+\)$', "", m.name)
-
-    movie_directors = tree.xpath('//p[@class="bioheading"][contains(text(), "Directors")]/following-sibling::p[@class="biodata"][1]/a/text()')
-    m.direcors = m.set_stripped_value(movie_directors)
-
-    movie_synopsis = tree.xpath('//div[@id="synopsis"]/div[@class="padded-panel"]//text()')
-    m.synopsis = m.set_value(movie_synopsis)
-
-    movie_duration = tree.xpath('//p[@class="bioheading"][contains(text(), "Minutes")]/following-sibling::p[@class="biodata"][1]/text()')
-    m.duration = m.set_stripped_value(movie_duration)
-
-    movie_date = tree.xpath('//p[@class="bioheading"][contains(text(), "Release Date")]/following-sibling::p[@class="biodata"][1]/text()') 
-    m.date = m.set_stripped_value(movie_date)
-    if m.date:
+        actor.measurements = xpath_html(html=raw_data, xpath=XPATHS["measurements"])
+        actor.tattoos = xpath_html(html=raw_data, xpath=XPATHS["tatoos"])
+        actor.piercings = xpath_html(html=raw_data, xpath=XPATHS["piercings"])
         try:
-            m.date = datetime.datetime.strptime(m.date, iafd_date_scene).strftime(stash_date)
-        except:
+            actor.career_length = re.search(
+                r"(\S*)\s\(", xpath_html(html=raw_data, xpath=XPATHS["career_length"])
+            ).group(1)
+        except Exception:
             pass
+        actor.url = url or f"{SITE_URL}{xpath_html(html=raw_data, xpath=XPATHS['actor_url'])}"
+        actor.twitter = xpath_html(html=raw_data, xpath=XPATHS["twitter"])
+        actor.instagram = xpath_html(html=raw_data, xpath=XPATHS["instagram"])
+        actor.image = image_decode()
+        return actor.json
 
-    movie_aliases = tree.xpath('//div[@class="col-sm-12"]/dl/dd//text()')
-    m.aliases = m.set_concat_value(", ", movie_aliases)
 
-    movie_studio = tree.xpath('//p[@class="bioheading"][contains(text(),"Studio")]/following-sibling::p[@class="biodata"][1]//text()|//p[@class="bioheading"][contains(text(),"Distributor")]/following-sibling::p[@class="biodata"][1]//text()')
-    m.studio = m.set_named_value("name",movie_studio)
+def main():
+    args = argument_handler()
+    fragment = json.loads(sys.stdin.read())
 
-    res = m.to_json()
-    print(res)
-    #debug_print(res)
-    sys.exit(0)
+    if args.scene_url:
+        scraped_json = scrape_scene_by_url(url=fragment["url"])
+    elif args.scene_frag:
+        scraped_json = scrape_scene_by_title(title=fragment["title"])
+    elif args.actor_url:
+        scraped_json = scrape_actor_by_url(url=fragment["url"])
+    elif args.actor_frag:
+        scraped_json = scrape_actor_by_name(name=fragment["name"])
+    else:
+        debug("No param passed to script")
+        sys.exit(1)
 
-frag = json.loads(sys.stdin.read())
-#debug_print(json.dumps(frag))
-mode = "performer"
+    print(scraped_json)
 
-if len(sys.argv)>1:
-   if sys.argv[1] == "query":
-        debug_print("searching for <%s>" % frag['name'] )
-        performer_query(frag['name'])
-   if sys.argv[1] == "movie":
-        mode = "movie"
-   if sys.argv[1] == "scene":
-        mode = "scene"
 
-if not frag['url']:
-    log('No URL entered.')
-
-url = frag["url"]
-debug_print("scraping %s" % url)
-tree = scrape(url)
-
-if mode == "movie":
-    movie_from_tree(tree)
-
-if mode == "scene":
-    scene_from_tree(tree)
-
-#by default performer scraper
-performer_from_tree(tree)
-
-#Last Updated May 8, 2021
+if __name__ == "__main__":
+    main()
