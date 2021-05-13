@@ -34,7 +34,7 @@ class Resource:
 
     def validate_url_val(self, val, attr_name=""):
         self.validate_str_val(val, attr_name=attr_name)
-        if not urlparse(val).scheme:
+        if val and not urlparse(val).scheme:
             raise ValueError(f"{attr_name}: {val} is not a valid url")
         return val
 
@@ -66,7 +66,7 @@ class Performer(Resource):
         gender (str): must be one of (case insensitive)
                       male, female, transgender_male, transgender_female, intersex, non_binary
         birthdate (str): format should be YYYY-MM-DD
-        deathdate (str): format should be YYYY-MM-DD
+        death_date (str): format should be YYYY-MM-DD
         country (str)
         ethnicity (str)
         hair_color (str)
@@ -95,7 +95,7 @@ class Performer(Resource):
         self._aliases = None
         self._gender = None
         self._birthdate = None
-        self._deathdate = None
+        self._death_date = None
         self._country = None
         self._ethnicity = None
         self._hair_color = None
@@ -147,12 +147,12 @@ class Performer(Resource):
         self._birthdate = self.validate_date_val(val, attr_name="Birthdate")
 
     @property
-    def deathdate(self):
-        return self._deathdate
+    def death_date(self):
+        return self._death_date
 
-    @deathdate.setter
-    def deathdate(self, val):
-        self._deathdate = self.validate_date_val(val, attr_name="Deathdate")
+    @death_date.setter
+    def death_date(self, val):
+        self._death_date = self.validate_date_val(val, attr_name="Death Date")
 
     @property
     def country(self):

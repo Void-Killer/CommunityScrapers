@@ -2,6 +2,7 @@ import sys
 from argparse import ArgumentParser
 
 import cloudscraper
+from lxml import etree
 
 
 def argument_handler():
@@ -17,6 +18,19 @@ def argument_handler():
 
 def debug(mgs):
     print(mgs, file=sys.stderr)
+
+
+def xpath_html(html, xpath, get_first=True):
+    tree = etree.HTML(html)
+    if get_first:
+        try:
+            match = tree.xpath(f"{xpath}")[0]
+            assert "No data" not in match
+        except Exception:
+            return None
+        return match
+    else:
+        return tree.xpath(f"{xpath}")
 
 
 def get_data(url, headers=None, check_rc=True):
