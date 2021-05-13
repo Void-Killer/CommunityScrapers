@@ -22,15 +22,17 @@ SITE_URLS = {
         "paths": {"scene": "scene", "actor": "modelprofile"},
     },
 }
-USA_BIRTHPLACES = (
+USA_COUNTRY_NAMES = (
     "AK, AL, AR, AZ, CA, CO, CT, DC, DE, FL, GA, HI, IA, ID, IL, IN, KS, KY, LA, MA, MD, ME, MI, MN, MO, MS, MT, NC, "
     "ND, NE, NH, NJ, NM, NV, NY, OH, OK, OR, PA, RI, SC, SD, TN, TX, UT, VA, VT, WA, WI, WV, WY, Alabama, Alaska, "
     "Arizona, Arkansas, California, Colorado, Connecticut, Delaware, Florida, Georgia, Hawaii, Idaho, Illinois, "
     "Indiana, Iowa, Kansas, Kentucky, Louisiana, Maine, Maryland, Massachusetts, Michigan, Minnesota, Mississippi, "
     "Missouri, Montana, Nebraska, Nevada, New Hampshire, New Jersey, New Mexico, New York, North Carolina, "
     "North Dakota, Ohio, Oklahoma, Oregon, Pennsylvania, Rhode Island, South Carolina, South Dakota, Tennessee, "
-    "Texas, Utah, Vermont, Virginia, Washington, West Virginia, Wisconsin, Wyoming"
+    "Texas, Utah, Vermont, Virginia, Washington, West Virginia, Wisconsin, Wyoming, United States, "
+    "United States of America"
 )
+UK_COUNTRY_NAMES = "England, South Wales, United Kingdom"
 
 
 def get_token(site):
@@ -174,9 +176,11 @@ def scrape_actor(raw_data, url=None):
         actor_name = slugify(text=actor.get("name"))
         return f"{site}/{path}/{actor_id}/{actor_name}"
 
-    def country_replace(actor):
-        country = actor.get("birthPlace").split(", ")[-1].replace("United Kingdom", "UK")
-        return "USA" if country.strip() in USA_BIRTHPLACES else country
+    def country_replace():
+        country = raw_data.get("birthPlace", "").split(", ")[-1]
+        country = "USA" if country.strip() in USA_COUNTRY_NAMES else country
+        country = "UK" if country.strip() in UK_COUNTRY_NAMES else country
+        return country
 
     def generate_aliases(actor):
         aliases = actor.get("aliases")
@@ -199,12 +203,16 @@ def scrape_actor(raw_data, url=None):
         actor.name = raw_data.get("name")
         actor.aliases = generate_aliases(actor=raw_data)
         actor.gender = raw_data.get("gender")
-        actor.birthdate = datetime.strptime(raw_data.get("birthday"), "%Y-%m-%dT%H:%M:%S%z").strftime("%Y-%m-%d")
-        actor.country = country_replace(actor=raw_data)
-        actor.height = str(raw_data.get("height") + 100)
-        actor.weight = str(round(raw_data.get("weight") / 2.205))
+        try:
+            actor.birthdate = datetime.strptime(raw_data.get("birthday"), "%Y-%m-%dT%H:%M:%S%z").strftime("%Y-%m-%d")
+        except Exception:
+            pass
+        actor.country = country_replace()
+        actor.height = str(raw_data.get("height") + 100) if raw_data.get("height") else None
+        actor.weight = str(round(raw_data.get("weight") / 2.205)) if raw_data.get("weight") else None
         actor.measurements = raw_data.get("measurements")
-        actor.fake_tits = "Yes" if [tag for tag in raw_data.get("tags") if tag.get("name") == "Enhanced"] else "No"
+        if actor.gender == "Female":
+            actor.fake_tits = "Yes" if [tag for tag in raw_data.get("tags") if tag.get("name") == "Enhanced"] else "No"
         actor.url = url or generate_url(actor=raw_data)
         actor.details = raw_data.get("bio")
         actor.tags = [{"name": tag.get("name").title()} for tag in raw_data.get("tags")]
